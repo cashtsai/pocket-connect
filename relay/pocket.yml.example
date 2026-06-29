@@ -1,0 +1,9 @@
+# Pocket bridge relay — exposes the local bridge (cc/codex/v2/hermes 三路) publicly.
+# Managed standalone so it never disturbs the fed-console-studio tunnel.
+tunnel: 614ad2a9-661f-42fe-a15f-6eefeac723fc
+credentials-file: /Users/xcash/.cloudflared/614ad2a9-661f-42fe-a15f-6eefeac723fc.json
+
+ingress:
+  - hostname: pocket.tsai.cash
+    service: http://127.0.0.1:8081
+  - service: http_status:404
