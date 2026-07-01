@@ -22,7 +22,8 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 # Optional: bundle the helper binaries so users need nothing pre-installed.
 #   cp "$(command -v cloudflared)" "$APPDIR/Contents/Resources/cloudflared"
 #   (bridge runtime would be bundled here too — see README "Bundling deps")
-# Optional: app icon → cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
+# App icon (red squircle white "P") → bundled into Resources so Finder/Dock show it.
+cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
 
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
 #   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper
@@ -69,7 +70,7 @@ DMG="$OUT/PocketConnect-$VER.dmg"
 STAGE="$OUT/dmg"; mkdir -p "$STAGE"
 cp -R "$APPDIR" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
-hdiutil create -volname "$APP" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname "Pocket" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
 
 echo "✓ done:"

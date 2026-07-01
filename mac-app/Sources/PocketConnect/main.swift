@@ -1,6 +1,6 @@
 import AppKit
 
-// Pocket Connect — macOS menu-bar app.
+// Pocket — macOS menu-bar app.
 // Supervises the local bridge + Cloudflare tunnel so the phone connects with no
 // setup, shows a QR to download the iOS app, and (M1) does Sign in with Apple +
 // mints an account-bound pairing QR so the phone can pair to THIS desktop.
@@ -97,8 +97,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "P"
-        statusItem.button?.toolTip = "Pocket Connect"
+        if let button = statusItem.button {
+            button.image = Self.menuBarIcon()   // template "P" — auto light/dark
+            button.imagePosition = .imageOnly
+            button.toolTip = "Pocket"
+        }
         supervisor.onChange = { [weak self] in self?.rebuildMenu() }
         rebuildMenu()
         // periodic reachability poll
@@ -115,14 +118,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         supervisor.probe(cfg.connectURL) { [weak self] ok in
             guard let self else { return }
             self.reachable = ok
-            self.statusItem.button?.title = ok ? "P●" : "P○"
+            // Icon stays the branded "P"; reachability shows on hover instead of
+            // cluttering the menu bar with a status glyph.
+            self.statusItem.button?.toolTip = ok ? "Pocket — ● 已連線" : "Pocket — ○ 離線"
             self.rebuildMenu()
         }
     }
 
+    /// A monochrome template "P" for the menu bar. Template images are recolored
+    /// by AppKit to match the active light/dark menu-bar appearance, so the bold
+    /// red squircle stays in the Dock/Finder while the bar shows a clean glyph.
+    private static func menuBarIcon() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let font = NSFont.systemFont(ofSize: 15, weight: .bold)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.black,   // template → recolored by system
+            ]
+            let text = "P" as NSString
+            let textSize = text.size(withAttributes: attrs)
+            let origin = NSPoint(x: rect.midX - textSize.width / 2,
+                                 y: rect.midY - textSize.height / 2)
+            text.draw(at: origin, withAttributes: attrs)
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     func rebuildMenu() {
         let m = NSMenu()
-        let header = NSMenuItem(title: "Pocket Connect", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "Pocket", action: nil, keyEquivalent: "")
         header.isEnabled = false
         m.addItem(header)
         let status = NSMenuItem(
@@ -146,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
                              action: #selector(toggleServices), keyEquivalent: "s"))
         m.addItem(NSMenuItem(title: "重新設定…", action: #selector(resetOnboarding), keyEquivalent: ""))
         m.addItem(.separator())
-        m.addItem(NSMenuItem(title: "結束 Pocket Connect", action: #selector(quit), keyEquivalent: ""))
+        m.addItem(NSMenuItem(title: "結束 Pocket", action: #selector(quit), keyEquivalent: ""))
         m.items.forEach { $0.target = self }
         statusItem.menu = m
     }

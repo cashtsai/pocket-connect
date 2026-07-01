@@ -135,7 +135,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let pairingView = PairingQRView(frame: NSRect(x: 0, y: 0, width: 420, height: 480))
 
     // Welcome-screen controls (kept around so we can swap views in place).
-    private let titleLabel = NSTextField(labelWithString: "歡迎使用 Pocket Connect")
+    private let titleLabel = NSTextField(labelWithString: "歡迎使用 Pocket")
     private let bodyLabel = NSTextField(wrappingLabelWithString:
         "這台 Mac 會成為你的 Pocket 執行主機。手機當遙控,所有登入與金鑰都留在這台桌機。\n\n先用 Apple 登入,完成後掃 QR 就能把手機配對上來。")
     private let signInButton = NSButton(title: "  使用 Apple 登入  ", target: nil, action: nil)
@@ -145,7 +145,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     init() {
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 480),
                            styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        win.title = "Pocket Connect 設定"
+        win.title = "Pocket 設定"
         win.center()
         super.init(window: win)
         win.delegate = self

@@ -1,4 +1,4 @@
-# Pocket Connect (macOS menu-bar app)
+# Pocket (macOS menu-bar app)
 
 裝在跑 Claude Code / Codex / Hermes 的那台 Mac 上,讓手機**零設定連線**。
 設計成**可打包成安裝檔**的結構,方便未來商業化推廣。
@@ -9,7 +9,7 @@
 ## 現在做到哪
 雛形(v0.1,可編譯可打包):
 - 選單列 App(AppKit agent,`LSUIElement`,無 Dock 圖示)
-- 狀態列:`P●`(已連線)/`P○`(離線),每 8 秒探測 `pocket.tsai.cash` 可達性
+- 狀態列:品牌「P」圖示(紅底白 P 的 template 版,自動適應淺/深色),每 8 秒探測 `pocket.tsai.cash` 可達性,連線狀態顯示在滑鼠停留的 tooltip(`Pocket — ● 已連線 / ○ 離線`)
 - 選單:**複製連線網址**、**顯示下載 App QR**(CoreImage 產生)、**啟動/停止服務**、結束
 - **服務 supervise**:啟動/停止本機 `bridge`(uvicorn)+ `cloudflared`(pocket tunnel)
 - **打包**:`packaging/build_dmg.sh` → `Pocket Connect.app` + `PocketConnect-<ver>.dmg`
