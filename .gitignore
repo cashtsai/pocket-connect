@@ -2,3 +2,4 @@
 !*.example
 .DS_Store
 mac-app/build/
+mac-app/.build/

@@ -24,9 +24,18 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 #   (bridge runtime would be bundled here too — see README "Bundling deps")
 # Optional: app icon → cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
 
-# Ad-hoc sign so it launches locally. For real distribution use a Developer ID
-# cert + notarization (see README "Signing & notarization").
-codesign --force --deep --sign - "$APPDIR" 2>/dev/null || echo "  (codesign skipped)"
+# Sign so it launches locally. We attach the Sign in with Apple entitlement here.
+#   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't fully work,
+#     Gatekeeper will warn on other Macs — see README).
+#   - SIGN_IDENTITY="Developer ID Application: …" (or an Apple Dev cert tied to
+#     the Team ID) → a build that can actually complete Sign in with Apple.
+ENTITLEMENTS="packaging/PocketConnect.entitlements"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
+echo "▸ codesign (identity: $SIGN_IDENTITY)"
+codesign --force --deep \
+  --entitlements "$ENTITLEMENTS" \
+  --sign "$SIGN_IDENTITY" "$APPDIR" 2>/dev/null \
+  || echo "  (codesign skipped or failed — ad-hoc build may still run locally)"
 
 echo "▸ create .dmg"
 DMG="$OUT/PocketConnect-$VER.dmg"

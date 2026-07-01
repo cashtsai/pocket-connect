@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Sign in with Apple. Requires a Team-ID-backed App ID that has the
+       "Sign in with Apple" capability enabled, plus a provisioning profile that
+       matches CFBundleIdentifier (cash.tsai.pocket.connect). Ad-hoc signing will
+       embed this entitlement but Apple will NOT return a usable identityToken
+       without the real Team ID + profile — see README "Sign in with Apple". -->
+  <key>com.apple.developer.applesignin</key>
+  <array>
+    <string>Default</string>
+  </array>
+</dict>
+</plist>

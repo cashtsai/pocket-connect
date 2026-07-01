@@ -14,15 +14,50 @@
 - **服務 supervise**:啟動/停止本機 `bridge`(uvicorn)+ `cloudflared`(pocket tunnel)
 - **打包**:`packaging/build_dmg.sh` → `Pocket Connect.app` + `PocketConnect-<ver>.dmg`
 
+## M1 新增(登入 + 配對 QR + 發佈)
+- **首次啟動引導**:第一次開啟彈出視窗(歡迎 → Apple 登入 → 配對 QR)。用
+  `UserDefaults` 的 `pocketConnectOnboarded` 記住,之後直接進選單列;選單「重新設定…」
+  可再跑一次。
+- **Sign in with Apple(桌面版)**:`ASAuthorizationAppleIDProvider` +
+  `ASAuthorizationController`(原生 AppKit),登入後把 session token 存進本機 Keychain
+  (`kSecClassGenericPassword`,不同步 iCloud)。
+- **配對 QR**:登入後呼叫 `POST /app/v1/pair/new`(bridge bearer + account session),
+  出一次性 code,組成 `pocket://pair?scheme=https&host=<host>&code=<code>`(與
+  `pocket-pair.py` 同格式),畫成 QR;5 分鐘倒數,過期可重新產生。未登入的選單項顯示
+  「請先登入」。
+- **發佈**:push tag `v*.*.*` → `.github/workflows/release.yml` 在 macOS runner build
+  → `build_dmg.sh` → 上傳 `.dmg` 成 GitHub Release。本機出版本用
+  `packaging/cut_release.sh <ver|patch|minor|major>`。
+
+## ⚠️ Sign in with Apple 卡點(需善彰提供)
+`swift run` / ad-hoc `.dmg` 能跑起 UI、能走到「按鈕 → Apple 面板」,但 **Apple 不會回傳
+有效的 `identityToken`**,除非 App 用真實 **Apple Developer Team ID** 簽章:
+- App ID `cash.tsai.pocket.connect` 需開啟 **Sign in with Apple** capability + 對應
+  provisioning profile;`packaging/PocketConnect.entitlements` 已備好
+  `com.apple.developer.applesignin`,build 時用
+  `SIGN_IDENTITY="…" ./packaging/build_dmg.sh` 帶入憑證。
+- **audience 不一致**:bridge 目前只收 `aud == com.pocketagent.ios`(見
+  `APP_BRIDGE_CONTRACT.md`),桌面 bundle id 不同 → 需善彰在 bridge 的
+  `APPLE_ID_AUDIENCES` 加入桌面 bundle id,或把桌面 App ID 對齊。
+- 在拿到 Team ID + 上述設定前,**驗收 #3(真實登入)無法完成**,不用假資料硬過。
+
 ## 結構
 ```
 mac-app/
-├── Package.swift                     # SwiftPM executable(免 Xcode)
-├── Sources/PocketConnect/main.swift  # 選單列 App + supervisor + QR
+├── Package.swift                          # SwiftPM executable(免 Xcode)
+├── Sources/PocketConnect/
+│   ├── main.swift                         # 選單列 App + supervisor + 選單/QR 視窗
+│   ├── Onboarding.swift                   # 首次引導視窗 + 配對 QR 視圖 + 倒數
+│   ├── AppleSignIn.swift                  # ASAuthorizationController 原生登入
+│   ├── Bridge.swift                       # BRIDGE_TOKEN 讀取 + auth/apple、pair/new client
+│   ├── Keychain.swift                     # session token 存取(generic password)
+│   └── QR.swift                           # 共用 QR 產生 + 配對 payload
 ├── packaging/
-│   ├── Info.plist                    # LSUIElement、bundle id、版本
-│   └── build_dmg.sh                  # 組 .app → 產 .dmg
-└── build/                            # 產物(git 忽略)
+│   ├── Info.plist                         # LSUIElement、bundle id、版本
+│   ├── PocketConnect.entitlements         # Sign in with Apple entitlement
+│   ├── build_dmg.sh                       # 組 .app(可帶 SIGN_IDENTITY)→ 產 .dmg
+│   └── cut_release.sh                     # bump 版號 → build → tag → push
+└── build/                                 # 產物(git 忽略)
 ```
 
 ## 開發 / 打包
@@ -33,10 +68,11 @@ swift run            # 直接跑(選單列會出現 P 圖示)
 ```
 
 ## 下一步(待辦)
-- [ ] **首次設定**:把 `Config`(connect URL / 下載連結 / 服務指令)改成首次啟動的設定頁,而非寫死。
+- [x] **首次設定 / 引導**:首次啟動引導(M1)已做,`Config` 仍寫死預設值,尚未做設定頁。
+- [x] **配對 QR**:已做「配對這台桌機」帳號綁定一次性 code QR(M1)。
+- [ ] **Sign in with Apple 正式簽章**:見上方卡點,需 Team ID + entitlement + bridge audience。
 - [ ] **Bundling deps**:把 `cloudflared`(必要時連 bridge runtime)打包進 `Contents/Resources`,使用者不用先裝任何東西(腳本內已留註解位置)。
 - [ ] **登入自啟**:`SMAppService`(Login Item),讓服務開機常駐。
-- [ ] **配對 QR(P2)**:除了「下載 App」QR,再加一個「連線」QR(host+token),手機掃了自動帶入設定。
 - [ ] **連上自動開好 Hermes(商業)**:啟動時拉起 personas + 連接器。
 - [ ] **簽章 & 公證(Signing & notarization)**:用 Developer ID 憑證簽 + `notarytool` 公證,使用者開啟才不被 Gatekeeper 擋。目前是 ad-hoc 簽(本機可跑,散佈會被擋)。
 - [ ] **狀態列圖示**:換成 P logo(`Contents/Resources/AppIcon.icns` + template image)。
