@@ -25,17 +25,44 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 # Optional: app icon → cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
 
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
-#   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't fully work,
-#     Gatekeeper will warn on other Macs — see README).
-#   - SIGN_IDENTITY="Developer ID Application: …" (or an Apple Dev cert tied to
-#     the Team ID) → a build that can actually complete Sign in with Apple.
+#   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper
+#     will warn on other Macs — see README).
+#   - SIGN_IDENTITY=<Apple Development sha1/name tied to Team 4F8B93R3SH> → a
+#     Development build that can complete real Sign in with Apple on registered
+#     Macs. Also embed the matching provisioning profile so the restricted
+#     applesignin entitlement is authorized.
+# Base entitlements (ad-hoc builds sign with just this — Sign in with Apple).
 ENTITLEMENTS="packaging/PocketConnect.entitlements"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
+
+# Embed the provisioning profile (real-signed builds only). Point PROFILE at a
+# .provisionprofile, or leave the default to auto-pick the installed
+# "Pocket Agent Desktop Mac Dev" profile by its known UUID.
+PROFILE="${PROFILE:-$HOME/Library/MobileDevice/Provisioning Profiles/bcd619b6-c187-49d5-8e53-085e02a79f79.provisionprofile}"
+SIGN_ENTITLEMENTS="$ENTITLEMENTS"
+if [[ "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
+  echo "▸ embed provisioning profile: $(basename "$PROFILE")"
+  cp "$PROFILE" "$APPDIR/Contents/embedded.provisionprofile"
+  # A provisioned app must be signed with the profile's full entitlement set
+  # (application-identifier, team-identifier, keychain-access-groups, applesignin)
+  # or amfid refuses to launch it (Launchd job spawn failed / error 163). Derive
+  # them straight from the profile and add get-task-allow for a Development build.
+  DERIVED="$OUT/derived.entitlements"
+  security cms -D -i "$PROFILE" > "$OUT/profile.plist"
+  /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$OUT/profile.plist" > "$DERIVED"
+  /usr/libexec/PlistBuddy -c 'Add :com.apple.security.get-task-allow bool true' "$DERIVED" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c 'Set :com.apple.security.get-task-allow true' "$DERIVED"
+  SIGN_ENTITLEMENTS="$DERIVED"
+  echo "  entitlements: derived from profile (+ get-task-allow)"
+elif [[ "$SIGN_IDENTITY" != "-" ]]; then
+  echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
+fi
+
 echo "▸ codesign (identity: $SIGN_IDENTITY)"
 codesign --force --deep \
-  --entitlements "$ENTITLEMENTS" \
-  --sign "$SIGN_IDENTITY" "$APPDIR" 2>/dev/null \
-  || echo "  (codesign skipped or failed — ad-hoc build may still run locally)"
+  --entitlements "$SIGN_ENTITLEMENTS" \
+  --sign "$SIGN_IDENTITY" "$APPDIR" \
+  || echo "  (codesign failed — ad-hoc build may still run locally)"
 
 echo "▸ create .dmg"
 DMG="$OUT/PocketConnect-$VER.dmg"

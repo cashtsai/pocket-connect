@@ -8,7 +8,7 @@ import Security
 // — this session token is deliberately machine-local and must not iCloud-sync.
 enum Keychain {
     // Service/account namespace for the account session token.
-    private static let service = "cash.tsai.pocket.connect"
+    private static let service = "com.pocketagent.desktop"
     private static let account = "account-session-token"
 
     /// Store (or replace) the session token. Returns true on success.

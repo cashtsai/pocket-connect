@@ -29,17 +29,26 @@
   → `build_dmg.sh` → 上傳 `.dmg` 成 GitHub Release。本機出版本用
   `packaging/cut_release.sh <ver|patch|minor|major>`。
 
-## ⚠️ Sign in with Apple 卡點(需善彰提供)
-`swift run` / ad-hoc `.dmg` 能跑起 UI、能走到「按鈕 → Apple 面板」,但 **Apple 不會回傳
-有效的 `identityToken`**,除非 App 用真實 **Apple Developer Team ID** 簽章:
-- App ID `cash.tsai.pocket.connect` 需開啟 **Sign in with Apple** capability + 對應
-  provisioning profile;`packaging/PocketConnect.entitlements` 已備好
-  `com.apple.developer.applesignin`,build 時用
-  `SIGN_IDENTITY="…" ./packaging/build_dmg.sh` 帶入憑證。
-- **audience 不一致**:bridge 目前只收 `aud == com.pocketagent.ios`(見
-  `APP_BRIDGE_CONTRACT.md`),桌面 bundle id 不同 → 需善彰在 bridge 的
-  `APPLE_ID_AUDIENCES` 加入桌面 bundle id,或把桌面 App ID 對齊。
-- 在拿到 Team ID + 上述設定前,**驗收 #3(真實登入)無法完成**,不用假資料硬過。
+## Sign in with Apple — 正式簽章設定(已就緒)
+Bundle id 為 **`com.pocketagent.desktop`**(Team `4F8B93R3SH`)。正式登入需要用真實憑證
++ provisioning profile 簽章,以下已在善彰帳號建好:
+- **App ID** `com.pocketagent.desktop`(ASC id `6SUL2W23HK`),已啟用 **Sign in with
+  Apple** capability(primary app consent)。
+- **Mac Development profile** 「Pocket Agent Desktop Mac Dev」
+  (uuid `22403cda-d674-4ba6-8a2b-0e5ea908ce06`),綁本機裝置 + 開發憑證,已裝到
+  `~/Library/MobileDevice/Provisioning Profiles/`。
+- **憑證**:`Apple Development: Created via API`(本機指紋
+  `F0685308…`)。簽章用:
+  ```bash
+  SIGN_IDENTITY="F0685308E5B7BDADBA007D2D4DF773E117FFDC9D" ./packaging/build_dmg.sh
+  ```
+  `build_dmg.sh` 會把上述 profile 嵌入 `Contents/embedded.provisionprofile` 並用
+  `packaging/PocketConnect.entitlements`(`com.apple.developer.applesignin`)簽。
+- **audience**:bridge 的 `APPLE_ID_AUDIENCES` 已含 `com.pocketagent.ios` 與
+  `com.pocketagent.desktop`(見 `~/Library/LaunchAgents/ai.studio.hermes-bridge.plist`)。
+
+> ⚠️ 這是 **Development** 簽章(本機/註冊裝置可跑真實 Apple 登入)。對外散佈仍需
+> Developer ID + 公證(獨立待辦)。
 
 ## 結構
 ```
