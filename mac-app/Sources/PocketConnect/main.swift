@@ -125,24 +125,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         }
     }
 
-    /// A monochrome template "P" for the menu bar. Template images are recolored
-    /// by AppKit to match the active light/dark menu-bar appearance, so the bold
-    /// red squircle stays in the Dock/Finder while the bar shows a clean glyph.
+    /// The real Pocket brand mark (pocket-stitch stripe + "P"), monochrome
+    /// template version for the menu bar. Loaded from the bundled
+    /// MenuBarIcon.png (traced straight out of the official red-squircle
+    /// icon — NOT a system-font "P" placeholder). Template images are
+    /// recolored by AppKit to match the active light/dark menu-bar
+    /// appearance, so the bold red squircle stays in the Dock/Finder while
+    /// the bar shows a clean monochrome glyph of the SAME logo.
     private static func menuBarIcon() -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size, flipped: false) { rect in
-            let font = NSFont.systemFont(ofSize: 15, weight: .bold)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: NSColor.black,   // template → recolored by system
-            ]
-            let text = "P" as NSString
-            let textSize = text.size(withAttributes: attrs)
-            let origin = NSPoint(x: rect.midX - textSize.width / 2,
-                                 y: rect.midY - textSize.height / 2)
-            text.draw(at: origin, withAttributes: attrs)
-            return true
+        guard let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
+              let image = NSImage(contentsOf: url) else {
+            // Fallback so the app never crashes if the asset is missing from
+            // an old bundle — draws a plain "P" as a last resort.
+            let size = NSSize(width: 18, height: 18)
+            let fallback = NSImage(size: size, flipped: false) { rect in
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 15, weight: .bold),
+                    .foregroundColor: NSColor.black,
+                ]
+                let text = "P" as NSString
+                let textSize = text.size(withAttributes: attrs)
+                text.draw(at: NSPoint(x: rect.midX - textSize.width / 2,
+                                      y: rect.midY - textSize.height / 2), withAttributes: attrs)
+                return true
+            }
+            fallback.isTemplate = true
+            return fallback
         }
+        // Menu bar glyphs read best around 18pt tall — scale the high-res
+        // source down while keeping it a template (system recolors it).
+        image.size = NSSize(width: 18 * (image.size.width / image.size.height), height: 18)
         image.isTemplate = true
         return image
     }

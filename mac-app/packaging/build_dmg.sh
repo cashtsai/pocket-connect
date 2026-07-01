@@ -24,6 +24,10 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 #   (bridge runtime would be bundled here too — see README "Bundling deps")
 # App icon (red squircle white "P") → bundled into Resources so Finder/Dock show it.
 cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
+# Menu bar glyph: the REAL brand mark (pocket-stitch stripe + "P") traced out
+# of the official icon, not a system-font placeholder. isTemplate=true in
+# code handles the light/dark recoloring; this is just the source art.
+cp packaging/MenuBarIcon.png "$APPDIR/Contents/Resources/"
 
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
 #   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper
