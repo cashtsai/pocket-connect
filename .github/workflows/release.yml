@@ -30,7 +30,7 @@ jobs:
         id: art
         working-directory: mac-app
         run: |
-          DMG=$(ls build/PocketConnect-*.dmg | head -1)
+          DMG=$(ls build/Pocket-*.dmg | head -1)
           echo "dmg=mac-app/$DMG" >> "$GITHUB_OUTPUT"
           echo "Found $DMG"
 
