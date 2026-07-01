@@ -23,8 +23,9 @@ cur=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$PLIST")
 arg="${1:-patch}"
 
 bump() {  # $1=current  $2=part
-  local IFS=.; set -- $1; local maj=$1 min=$2 pat=$3
-  case "$2" in
+  local part="$2"   # save before `set --` clobbers $2
+  local IFS=.; set -- ${=1}; local maj=$1 min=$2 pat=$3  # ${=1}: zsh needs this to word-split
+  case "$part" in
     major) echo "$((maj+1)).0.0" ;;
     minor) echo "$maj.$((min+1)).0" ;;
     patch) echo "$maj.$min.$((pat+1))" ;;
