@@ -1,11 +1,11 @@
 #!/bin/zsh
 set -euo pipefail
-# Build Pocket Connect.app and package it into a distributable .dmg installer.
+# Build Pocket.app and package it into a distributable .dmg installer.
 # Usage:  ./packaging/build_dmg.sh
-# Output: build/Pocket Connect.app  and  build/PocketConnect-<ver>.dmg
+# Output: build/Pocket.app  and  build/Pocket-<ver>.dmg
 cd "$(dirname "$0")/.."   # mac-app/
 
-APP="Pocket Connect"
+APP="Pocket"
 VER=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" packaging/Info.plist 2>/dev/null || echo 0.1.0)
 OUT=build
 APPDIR="$OUT/$APP.app"
@@ -66,7 +66,7 @@ codesign --force --deep \
   || echo "  (codesign failed — ad-hoc build may still run locally)"
 
 echo "▸ create .dmg"
-DMG="$OUT/PocketConnect-$VER.dmg"
+DMG="$OUT/Pocket-$VER.dmg"
 STAGE="$OUT/dmg"; mkdir -p "$STAGE"
 cp -R "$APPDIR" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
