@@ -1,0 +1,50 @@
+name: Release
+
+# Cut a GitHub Release with the .dmg whenever a version tag is pushed.
+#   git tag v0.2.0 && git push origin v0.2.0
+# (mac-app/packaging/cut_release.sh does the bump+tag+push for you.)
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write   # needed for softprops/action-gh-release to upload assets
+
+jobs:
+  build-dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build .dmg
+        working-directory: mac-app
+        # Ad-hoc signed for now (no Developer ID / notarization — see README).
+        # When a signing cert is available in secrets, set SIGN_IDENTITY here.
+        run: ./packaging/build_dmg.sh
+
+      - name: Locate artifact
+        id: art
+        working-directory: mac-app
+        run: |
+          DMG=$(ls build/PocketConnect-*.dmg | head -1)
+          echo "dmg=mac-app/$DMG" >> "$GITHUB_OUTPUT"
+          echo "Found $DMG"
+
+      - name: Create GitHub Release + upload dmg
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.art.outputs.dmg }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            Pocket Connect ${{ github.ref_name }}
+
+            下載 `.dmg` → 拖進 Applications → 開啟 → 選單列出現圖示 → 首次啟動引導
+            (Apple 登入 + 配對 QR)。
+
+            ⚠️ 這是 ad-hoc 簽章版本(尚未 Developer ID 簽章 / 公證),首次開啟需在
+            「系統設定 → 隱私權與安全性」按「仍要打開」。

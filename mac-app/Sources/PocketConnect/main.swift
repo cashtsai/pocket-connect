@@ -1,17 +1,21 @@
 import AppKit
-import CoreImage.CIFilterBuiltins
 
-// Pocket Connect — macOS menu-bar app.
+// Pocket — macOS menu-bar app.
 // Supervises the local bridge + Cloudflare tunnel so the phone connects with no
-// setup, and shows a QR to download the iOS app. Built as a plain AppKit agent
-// (LSUIElement) so it packages into a .app/.dmg without Xcode.
+// setup, shows a QR to download the iOS app, and (M1) does Sign in with Apple +
+// mints an account-bound pairing QR so the phone can pair to THIS desktop.
+// Built as a plain AppKit agent (LSUIElement) so it packages into a .app/.dmg
+// without Xcode.
 
 // MARK: - Config (the installer/first-run will eventually fill these in)
 struct Config {
     // Public connect URL the phone points at (the Cloudflare tunnel hostname).
+    // Also the base for all bridge app-API calls (auth/apple, pair/new).
     var connectURL = "https://pocket.tsai.cash"
     // Where users download the iOS app (TestFlight public link / App Store).
     var downloadURL = "https://testflight.apple.com/"   // TODO: real link
+    // UserDefaults flag marking first-run onboarding as complete.
+    let onboardedKey = "pocketConnectOnboarded"
     // Commands this app supervises. For a shipped installer these get bundled;
     // for now they point at the local dev setup.
     var bridge = LaunchSpec(
@@ -73,37 +77,79 @@ final class Supervisor {
 }
 
 // MARK: - App
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     let cfg = Config()
     lazy var supervisor = Supervisor(cfg)
+    lazy var bridge = BridgeClient(baseURL: cfg.connectURL)
     var statusItem: NSStatusItem!
-    var qrWindow: NSWindow?
+    var downloadQRWindow: NSWindow?
     var reachable = false
+
+    // Onboarding + pairing state.
+    private var onboarding: OnboardingWindowController?
+    private var onboardingPairing: PairingCoordinator?
+    private var pairWindow: NSWindow?
+    private var pairWindowView: PairingQRView?
+    private var pairWindowCoordinator: PairingCoordinator?
+
+    private var isSignedIn: Bool { Keychain.loadSessionToken() != nil }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "P"
-        statusItem.button?.toolTip = "Pocket Connect"
+        if let button = statusItem.button {
+            button.image = Self.menuBarIcon()   // template "P" — auto light/dark
+            button.imagePosition = .imageOnly
+            button.toolTip = "Pocket"
+        }
         supervisor.onChange = { [weak self] in self?.rebuildMenu() }
         rebuildMenu()
         // periodic reachability poll
         Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.poll() }
         poll()
+
+        // First-run: show onboarding unless already completed.
+        if !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
+            presentOnboarding()
+        }
     }
 
     func poll() {
         supervisor.probe(cfg.connectURL) { [weak self] ok in
             guard let self else { return }
             self.reachable = ok
-            self.statusItem.button?.title = ok ? "P●" : "P○"
+            // Icon stays the branded "P"; reachability shows on hover instead of
+            // cluttering the menu bar with a status glyph.
+            self.statusItem.button?.toolTip = ok ? "Pocket — ● 已連線" : "Pocket — ○ 離線"
             self.rebuildMenu()
         }
     }
 
+    /// A monochrome template "P" for the menu bar. Template images are recolored
+    /// by AppKit to match the active light/dark menu-bar appearance, so the bold
+    /// red squircle stays in the Dock/Finder while the bar shows a clean glyph.
+    private static func menuBarIcon() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let font = NSFont.systemFont(ofSize: 15, weight: .bold)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.black,   // template → recolored by system
+            ]
+            let text = "P" as NSString
+            let textSize = text.size(withAttributes: attrs)
+            let origin = NSPoint(x: rect.midX - textSize.width / 2,
+                                 y: rect.midY - textSize.height / 2)
+            text.draw(at: origin, withAttributes: attrs)
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     func rebuildMenu() {
         let m = NSMenu()
-        let header = NSMenuItem(title: "Pocket Connect", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "Pocket", action: nil, keyEquivalent: "")
         header.isEnabled = false
         m.addItem(header)
         let status = NSMenuItem(
@@ -111,14 +157,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action: nil, keyEquivalent: "")
         status.isEnabled = false
         m.addItem(status)
+        // Login state line.
+        let loginLine = NSMenuItem(title: isSignedIn ? "✓ 已用 Apple 登入" : "— 尚未登入", action: nil, keyEquivalent: "")
+        loginLine.isEnabled = false
+        m.addItem(loginLine)
         m.addItem(.separator())
         m.addItem(NSMenuItem(title: "複製連線網址", action: #selector(copyURL), keyEquivalent: "c"))
-        m.addItem(NSMenuItem(title: "顯示下載 App QR…", action: #selector(showQR), keyEquivalent: "q"))
+        m.addItem(NSMenuItem(title: "顯示下載 App QR…", action: #selector(showDownloadQR), keyEquivalent: "q"))
+        // Pairing QR — only actionable once signed in; otherwise prompts login.
+        let pairItem = NSMenuItem(title: isSignedIn ? "配對這台桌機 QR…" : "配對這台桌機(請先登入)",
+                                  action: #selector(showPairingQR), keyEquivalent: "p")
+        m.addItem(pairItem)
         m.addItem(.separator())
         m.addItem(NSMenuItem(title: supervisor.running ? "停止服務" : "啟動服務",
                              action: #selector(toggleServices), keyEquivalent: "s"))
+        m.addItem(NSMenuItem(title: "重新設定…", action: #selector(resetOnboarding), keyEquivalent: ""))
         m.addItem(.separator())
-        m.addItem(NSMenuItem(title: "結束 Pocket Connect", action: #selector(quit), keyEquivalent: ""))
+        m.addItem(NSMenuItem(title: "結束 Pocket", action: #selector(quit), keyEquivalent: ""))
         m.items.forEach { $0.target = self }
         statusItem.menu = m
     }
@@ -132,16 +187,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func quit() { supervisor.stop(); NSApp.terminate(nil) }
 
-    @objc func showQR() {
-        let img = qr(cfg.downloadURL, size: 320)
-        let win = qrWindow ?? makeQRWindow()
-        qrWindow = win
+    // MARK: Download-app QR (unchanged behaviour, now using shared makeQR).
+    @objc func showDownloadQR() {
+        let img = makeQR(cfg.downloadURL, size: 320)
+        let win = downloadQRWindow ?? makeDownloadQRWindow()
+        downloadQRWindow = win
         if let iv = win.contentView?.subviews.compactMap({ $0 as? NSImageView }).first { iv.image = img }
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func makeQRWindow() -> NSWindow {
+    private func makeDownloadQRWindow() -> NSWindow {
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 420),
                            styleMask: [.titled, .closable], backing: .buffered, defer: false)
         win.title = "下載 Pocket App"
@@ -157,16 +213,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return win
     }
 
-    // QR via CoreImage
-    private func qr(_ string: String, size: CGFloat) -> NSImage {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(string.utf8)
-        filter.correctionLevel = "M"
-        guard let ci = filter.outputImage else { return NSImage(size: .init(width: size, height: size)) }
-        let scale = size / ci.extent.width
-        let scaled = ci.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let rep = NSCIImageRep(ciImage: scaled)
-        let img = NSImage(size: rep.size); img.addRepresentation(rep); return img
+    // MARK: Pairing QR from the menu (post-onboarding).
+    @objc func showPairingQR() {
+        guard isSignedIn else { presentOnboarding(); return }
+        let view = pairWindowView ?? PairingQRView(frame: NSRect(x: 0, y: 0, width: 420, height: 460))
+        pairWindowView = view
+        let coordinator = pairWindowCoordinator ?? PairingCoordinator(
+            client: bridge, sessionProvider: { Keychain.loadSessionToken() })
+        pairWindowCoordinator = coordinator
+        coordinator.onState = { [weak view] s in view?.apply(s) }
+        view.onRegenerate = { [weak coordinator] in coordinator?.refresh() }
+
+        let win = pairWindow ?? {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 460),
+                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            w.title = "配對這台桌機"
+            w.center()
+            w.contentView = view
+            pairWindow = w
+            return w
+        }()
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        coordinator.refresh()
+    }
+
+    // MARK: Onboarding
+    @objc func resetOnboarding() {
+        Keychain.clearSessionToken()
+        UserDefaults.standard.set(false, forKey: cfg.onboardedKey)
+        rebuildMenu()
+        presentOnboarding()
+    }
+
+    private func presentOnboarding() {
+        let controller = onboarding ?? OnboardingWindowController()
+        controller.flowDelegate = self
+        onboarding = controller
+        controller.present()
+    }
+
+    // OnboardingDelegate — the delegate owns the actual auth + pairing calls.
+    func onboardingDidTapSignIn(_ c: OnboardingWindowController) {
+        guard let window = c.window else { return }
+        let coordinator = AppleSignInCoordinator(presentingOver: window)
+        coordinator.start { [weak self, weak c] result in
+            guard let self, let c else { return }
+            switch result {
+            case .failure(let e):
+                c.showSignInError("Apple 登入失敗:\(e.localizedDescription)")
+            case .success(let cred):
+                self.bridge.authApple(appleUserID: cred.userID, identityToken: cred.identityToken,
+                                      displayName: cred.displayName, email: cred.email) { authResult in
+                    switch authResult {
+                    case .failure(let e):
+                        c.showSignInError("登入伺服器失敗:\(e)")
+                    case .success(let session):
+                        guard Keychain.saveSessionToken(session.sessionToken) else {
+                            return c.showSignInError("無法寫入 Keychain")
+                        }
+                        UserDefaults.standard.set(true, forKey: self.cfg.onboardedKey)
+                        self.rebuildMenu()
+                        self.startOnboardingPairing(c)
+                    }
+                }
+            }
+        }
+    }
+
+    private func startOnboardingPairing(_ c: OnboardingWindowController) {
+        c.showPairing()
+        let coordinator = PairingCoordinator(client: bridge, sessionProvider: { Keychain.loadSessionToken() })
+        onboardingPairing = coordinator
+        coordinator.onState = { [weak c] s in c?.pairingView.apply(s) }
+        c.pairingView.onRegenerate = { [weak coordinator] in coordinator?.refresh() }
+        coordinator.refresh()
+    }
+
+    func onboardingWindowDidClose(_ c: OnboardingWindowController) {
+        onboardingPairing?.stop()
+        onboardingPairing = nil
+        onboarding = nil
     }
 }
 
