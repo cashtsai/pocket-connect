@@ -11,5 +11,25 @@
   <array>
     <string>Default</string>
   </array>
+
+  <!-- CloudKit discovery layer (M2a). Same deal as applesignin: embedding the
+       keys costs nothing under ad-hoc signing — the app runtime-checks its own
+       signature (CloudGate) and silently disables CloudKit when the container
+       entitlement isn't actually authorized. A Development-signed build with a
+       provisioning profile whose App ID carries the iCloud capability is what
+       makes this live (Q1=B: development signing first, Developer ID stays on
+       the M4 schedule). -->
+  <key>com.apple.developer.icloud-container-identifiers</key>
+  <array>
+    <string>iCloud.com.pocketagent</string>
+  </array>
+  <key>com.apple.developer.icloud-services</key>
+  <array>
+    <string>CloudKit</string>
+  </array>
+  <!-- Silent push for the PocketZone CKSubscription; 30 s polling remains the
+       guaranteed fallback when push isn't available. -->
+  <key>com.apple.developer.aps-environment</key>
+  <string>development</string>
 </dict>
 </plist>

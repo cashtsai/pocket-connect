@@ -1,4 +1,5 @@
 import AppKit
+import PocketConnectKit
 
 // Pocket — macOS menu-bar app.
 // Supervises the local bridge + Cloudflare tunnel so the phone connects with no
@@ -16,6 +17,9 @@ struct Config {
     var downloadURL = "https://testflight.apple.com/"   // TODO: real link
     // UserDefaults flag marking first-run onboarding as complete.
     let onboardedKey = "pocketConnectOnboarded"
+    // Local bridge port — CloudKit hostCandidates (tailnet/LAN URLs) point the
+    // phone straight at it; must match the uvicorn --port below.
+    var bridgePort = 8081
     // Commands this app supervises. For a shipped installer these get bundled;
     // for now they point at the local dev setup.
     var bridge = LaunchSpec(
@@ -92,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     private var pairWindowView: PairingQRView?
     private var pairWindowCoordinator: PairingCoordinator?
 
+    // CloudKit discovery layer (M2a) — nil until setupCloudSync() runs.
+    var cloudSync: CloudSyncController?
+    var cloudStatusText = "—"
+
     private var isSignedIn: Bool { Keychain.loadSessionToken() != nil }
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -112,6 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         if !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
             presentOnboarding()
         }
+
+        // CloudKit discovery (M2a) — self-gating: silently off on builds
+        // without the iCloud entitlement or when no iCloud account is present.
+        setupCloudSync()
     }
 
     func poll() {
@@ -174,6 +186,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         let loginLine = NSMenuItem(title: isSignedIn ? "✓ 已用 Apple 登入" : "— 尚未登入", action: nil, keyEquivalent: "")
         loginLine.isEnabled = false
         m.addItem(loginLine)
+        let cloudLine = NSMenuItem(title: "iCloud 發現:\(cloudStatusText)", action: nil, keyEquivalent: "")
+        cloudLine.isEnabled = false
+        m.addItem(cloudLine)
         m.addItem(.separator())
         m.addItem(NSMenuItem(title: "複製連線網址", action: #selector(copyURL), keyEquivalent: "c"))
         m.addItem(NSMenuItem(title: "顯示下載 App QR…", action: #selector(showDownloadQR), keyEquivalent: "q"))
