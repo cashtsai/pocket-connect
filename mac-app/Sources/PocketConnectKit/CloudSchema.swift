@@ -17,6 +17,7 @@ public enum CloudSchema {
         public static let device = "Device"
         public static let pairingInvite = "PairingInvite"
         public static let pairingInfo = "PairingInfo"
+        public static let errorLog = "ErrorLog"
     }
 
     // Device — one record per signed-in device; recordName = stable deviceID.
@@ -38,6 +39,30 @@ public enum CloudSchema {
         public static let state = "state"
         public static let oneTimeCode = "oneTimeCode"
         public static let expiresAt = "expiresAt"
+    }
+
+    // PairingInfo — recordName = "{clientDeviceID}-{hostDeviceID}" (design §3.1).
+    // Mac side only READS this (written by the phone on claim / the QR path's
+    // best-effort backfill) — the dashboard shows it as "已配對裝置".
+    public enum PairingInfoField {
+        public static let clientDevice = "clientDevice"
+        public static let hostDevice = "hostDevice"
+        public static let pairedAt = "pairedAt"
+        public static let lastConnectedAt = "lastConnectedAt"
+        public static let status = "status"
+    }
+
+    // ErrorLog — append-only diagnostic record (design §3.1 / §4.4). Each
+    // device writes only its OWN entries and self-cleans past 200 (design §5
+    // M2c 驗收 ④); every device reads the whole type for the dashboard's
+    // mixed local+remote timeline.
+    public enum ErrorLogField {
+        public static let device = "device"
+        public static let ts = "ts"
+        public static let level = "level"
+        public static let code = "code"
+        public static let message = "message"
+        public static let context = "context"
     }
 }
 

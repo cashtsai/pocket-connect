@@ -27,6 +27,10 @@ public final class CloudSyncController {
     }
     /// Always invoked on the main thread.
     public var onStatusChange: ((Status) -> Void)?
+    /// Fired when a silent push lands (design §5 M2c 驗收 ②) — the dashboard
+    /// window (if open) should re-run DashboardStore.refresh(). Best-effort;
+    /// nobody needs to be listening.
+    public var onDashboardShouldRefresh: (() -> Void)?
 
     private let deviceInfoProvider: () -> DeviceInfo
     private let approvalHandler: PairingInviteMonitor.ApprovalHandler
@@ -38,6 +42,10 @@ public final class CloudSyncController {
     private var monitor: PairingInviteMonitor?
     private var heartbeat: Timer?
     private var accountObserver: NSObjectProtocol?
+    private var errorLogWriter: ErrorLogWriter?
+    /// Non-nil once the sync layer is active — the dashboard window reads
+    /// through this (design §5 M2c 驗收 ①②).
+    public private(set) var dashboardStore: DashboardStore?
 
     public init(deviceInfoProvider: @escaping () -> DeviceInfo,
                 approvalHandler: @escaping PairingInviteMonitor.ApprovalHandler,
@@ -90,6 +98,15 @@ public final class CloudSyncController {
     /// Wire the app delegate's silent-push callback here.
     public func handleRemoteNotification() {
         monitor?.pokePoll()
+        onDashboardShouldRefresh?()
+    }
+
+    /// Best-effort ErrorLog append (design §3.1/§4.4/§5 M2c 驗收 ②④). A no-op
+    /// while the sync layer isn't active — errors before/without iCloud just
+    /// stay local (NSLog), which every call site already does alongside this.
+    public func logError(level: ErrorLevel, code: String, message: String,
+                         context: [String: String] = [:]) {
+        errorLogWriter?.append(level: level, code: code, message: message, context: context)
     }
 
     // MARK: - Bring-up
@@ -109,11 +126,17 @@ public final class CloudSyncController {
     }
 
     private func activate(_ db: CloudDatabase, hostDeviceID: String) {
+        let errorLogWriter = ErrorLogWriter(database: db, deviceID: hostDeviceID)
+        self.errorLogWriter = errorLogWriter
+        self.dashboardStore = DashboardStore(database: db)
+
         let registrar = DeviceRegistrar(database: db, infoProvider: deviceInfoProvider)
         self.registrar = registrar
         registrar.upsert { result in
             if case .failure(let error) = result {
                 NSLog("PocketCloud: device upsert failed: %@", "\(error)")
+                errorLogWriter.append(level: .error, code: "device_upsert_failed",
+                                      message: "\(error)")
             }
         }
         heartbeat = Timer.scheduledTimer(withTimeInterval: Self.heartbeatInterval,
@@ -131,6 +154,8 @@ public final class CloudSyncController {
         db.saveSubscription(sub) { result in
             if case .failure(let error) = result {
                 NSLog("PocketCloud: subscription save failed (polling still active): %@", "\(error)")
+                errorLogWriter.append(level: .warning, code: "subscription_save_failed",
+                                      message: "\(error)")
             }
         }
 
@@ -146,6 +171,9 @@ public final class CloudSyncController {
                 } else {
                     UserDefaults.standard.removeObject(forKey: Self.changeTokenDefaultsKey)
                 }
+            },
+            errorLogger: { [weak errorLogWriter] level, code, message in
+                errorLogWriter?.append(level: level, code: code, message: message)
             })
         self.monitor = monitor
         monitor.start(pollInterval: Self.invitePollInterval)
@@ -169,6 +197,8 @@ public final class CloudSyncController {
         monitor?.stop()
         monitor = nil
         registrar = nil
+        errorLogWriter = nil
+        dashboardStore = nil
     }
 
     private func setStatus(_ s: Status) {

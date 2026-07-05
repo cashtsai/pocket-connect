@@ -17,6 +17,9 @@ import Foundation
 public final class PairingInviteMonitor {
     public typealias ApprovalHandler = (PairingInvite, @escaping (Bool) -> Void) -> Void
     public typealias CodeIssuer = (@escaping (Result<(code: String, ttlSeconds: Int), Error>) -> Void) -> Void
+    /// Optional sink for the dashboard's ErrorLog (design §5 M2c 驗收 ②) —
+    /// mirrors the NSLog calls at the same sites, best-effort.
+    public typealias ErrorLogger = (ErrorLevel, String, String) -> Void
 
     private let database: CloudDatabase
     private let hostDeviceID: String
@@ -25,6 +28,7 @@ public final class PairingInviteMonitor {
     private let now: () -> Date
     private let loadChangeToken: () -> Data?
     private let saveChangeToken: (Data?) -> Void
+    private let errorLogger: ErrorLogger?
 
     private let lock = NSLock()
     private var inFlight: Set<String> = []
@@ -37,7 +41,8 @@ public final class PairingInviteMonitor {
                 codeIssuer: @escaping CodeIssuer,
                 now: @escaping () -> Date = Date.init,
                 loadChangeToken: @escaping () -> Data?,
-                saveChangeToken: @escaping (Data?) -> Void) {
+                saveChangeToken: @escaping (Data?) -> Void,
+                errorLogger: ErrorLogger? = nil) {
         self.database = database
         self.hostDeviceID = hostDeviceID
         self.approvalHandler = approvalHandler
@@ -45,6 +50,7 @@ public final class PairingInviteMonitor {
         self.now = now
         self.loadChangeToken = loadChangeToken
         self.saveChangeToken = saveChangeToken
+        self.errorLogger = errorLogger
     }
 
     // MARK: - Scheduling
@@ -99,6 +105,7 @@ public final class PairingInviteMonitor {
                     self.fetchChanges(allowTokenReset: false, completion: completion)
                 } else {
                     NSLog("PocketCloud: fetchZoneChanges failed: %@", "\(error)")
+                    self.errorLogger?(.warning, "invite_fetch_failed", "\(error)")
                     completion([])
                 }
             }
@@ -136,6 +143,7 @@ public final class PairingInviteMonitor {
             switch result {
             case .failure(let error):
                 NSLog("PocketCloud: pair/new failed, leaving invite untouched: %@", "\(error)")
+                self.errorLogger?(.error, "pair_new_failed", "\(error)")
                 self.finish(invite)
             case .success(let pair):
                 let record = invite.record

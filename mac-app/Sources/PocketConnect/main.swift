@@ -36,6 +36,10 @@ struct LaunchSpec { var exe: String; var args: [String]; var cwd: String? }
 // MARK: - Process supervisor
 final class Supervisor {
     var onChange: (() -> Void)?
+    /// Fired for anything worth surfacing on the dashboard's ErrorLog
+    /// (design §4.4 "bridge 起不來"): missing executable or an early,
+    /// non-normal process exit. Best-effort — the app keeps running either way.
+    var onLaunchFailure: ((String) -> Void)?
     private(set) var running = false
     private var procs: [Process] = []
     private let cfg: Config
@@ -46,14 +50,28 @@ final class Supervisor {
     func start() {
         guard !running else { return }
         for spec in [cfg.bridge, cfg.tunnel] {
-            guard FileManager.default.isExecutableFile(atPath: spec.exe) else { continue }
+            guard FileManager.default.isExecutableFile(atPath: spec.exe) else {
+                onLaunchFailure?("找不到可執行檔:\(spec.exe)")
+                continue
+            }
             let p = Process()
             p.executableURL = URL(fileURLWithPath: spec.exe)
             p.arguments = spec.args
             if let cwd = spec.cwd { p.currentDirectoryURL = URL(fileURLWithPath: cwd) }
-            p.terminationHandler = { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
-            try? p.run()
-            procs.append(p)
+            p.terminationHandler = { [weak self] proc in
+                DispatchQueue.main.async {
+                    if proc.terminationStatus != 0 {
+                        self?.onLaunchFailure?("\(spec.exe) 異常結束(exit \(proc.terminationStatus))")
+                    }
+                    self?.refresh()
+                }
+            }
+            do {
+                try p.run()
+                procs.append(p)
+            } catch {
+                onLaunchFailure?("啟動失敗:\(spec.exe) — \(error.localizedDescription)")
+            }
         }
         running = !procs.isEmpty
         onChange?()
@@ -71,11 +89,20 @@ final class Supervisor {
     // Reachability check: is the public URL answering? (bridge returns 401/403 w/o
     // a token, which still proves the pipe is up.)
     func probe(_ url: String, _ done: @escaping (Bool) -> Void) {
-        guard let u = URL(string: url) else { return done(false) }
+        probeLatency(url) { ok, _ in done(ok) }
+    }
+
+    // Same probe, also timing the round trip — dashboard §5 M2c 驗收 ① wants
+    // "bridge 存活/延遲" at a glance. latencyMs is nil when unreachable.
+    func probeLatency(_ url: String, _ done: @escaping (Bool, Double?) -> Void) {
+        guard let u = URL(string: url) else { return done(false, nil) }
         var r = URLRequest(url: u, timeoutInterval: 6)
         r.setValue("PocketConnect/1.0", forHTTPHeaderField: "User-Agent")
+        let start = DispatchTime.now()
         URLSession.shared.dataTask(with: r) { _, resp, _ in
-            DispatchQueue.main.async { done((resp as? HTTPURLResponse) != nil) }
+            let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+            let ok = (resp as? HTTPURLResponse) != nil
+            DispatchQueue.main.async { done(ok, ok ? elapsedMs : nil) }
         }.resume()
     }
 }
@@ -100,6 +127,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     var cloudSync: CloudSyncController?
     var cloudStatusText = "—"
 
+    // Dashboard window (M2c) — lazily created on first "儀表板…" click.
+    // Foreground refresh timer runs only while the window is open — a
+    // fallback for the CKSubscription push (design §3.2 "前景 fetch 兜底").
+    var dashboardWindow: NSWindow?
+    var dashboardModel: DashboardViewModel?
+    var dashboardRefreshTimer: Timer?
+
     private var isSignedIn: Bool { Keychain.loadSessionToken() != nil }
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -111,6 +145,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             button.toolTip = "Pocket"
         }
         supervisor.onChange = { [weak self] in self?.rebuildMenu() }
+        supervisor.onLaunchFailure = { [weak self] message in
+            self?.cloudSync?.logError(level: .error, code: "bridge_launch_failed", message: message)
+        }
         rebuildMenu()
         // periodic reachability poll
         Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.poll() }
@@ -194,6 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         cloudLine.isEnabled = false
         m.addItem(cloudLine)
         m.addItem(.separator())
+        m.addItem(NSMenuItem(title: "儀表板…", action: #selector(showDashboard), keyEquivalent: "d"))
         m.addItem(NSMenuItem(title: "複製連線網址", action: #selector(copyURL), keyEquivalent: "c"))
         m.addItem(NSMenuItem(title: "顯示下載 App QR…", action: #selector(showDownloadQR), keyEquivalent: "q"))
         // Pairing QR — only actionable once signed in; otherwise prompts login.
