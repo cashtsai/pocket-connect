@@ -30,6 +30,11 @@ extension AppDelegate {
             self?.cloudStatusText = Self.describe(status)
             self?.rebuildMenu()
         }
+        // Dashboard window (M2c) refreshes on silent push too, not just on
+        // open/timer — design §5 M2c 驗收 ② wants a 2-minute-ish turnaround.
+        controller.onDashboardShouldRefresh = { [weak self] in
+            self?.dashboardModel?.refresh()
+        }
         cloudSync = controller
         controller.startIfAvailable()
         // Silent push registration — only meaningful on entitled builds; on

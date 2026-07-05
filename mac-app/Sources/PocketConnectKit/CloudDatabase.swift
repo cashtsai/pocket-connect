@@ -32,6 +32,13 @@ public protocol CloudDatabase {
                           completion: @escaping (Result<ZoneChanges, Error>) -> Void)
     func saveSubscription(_ subscription: CKSubscription,
                           completion: @escaping (Result<Void, Error>) -> Void)
+    /// Fetch every record of a given type in the zone (design §5 M2c —
+    /// dashboard reads Device/PairingInfo/ErrorLog this way; ErrorLogWriter
+    /// uses it to find its own records for the 200-cap rotation). Result is
+    /// unsorted — callers sort client-side so this stays index-free even
+    /// before a Production CloudKit schema exists.
+    func queryRecords(ofType recordType: String, zoneID: CKRecordZone.ID,
+                      completion: @escaping (Result<[CKRecord], Error>) -> Void)
 }
 
 // MARK: - Live adapter
@@ -129,5 +136,26 @@ extension CKDatabase: CloudDatabase {
         save(subscription) { _, error in
             if let error { completion(.failure(error)) } else { completion(.success(())) }
         }
+    }
+
+    public func queryRecords(ofType recordType: String, zoneID: CKRecordZone.ID,
+                             completion: @escaping (Result<[CKRecord], Error>) -> Void) {
+        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+        let op = CKQueryOperation(query: query)
+        op.zoneID = zoneID
+        op.qualityOfService = .userInitiated
+        var records: [CKRecord] = []
+        op.recordMatchedBlock = { _, result in
+            if case .success(let record) = result { records.append(record) }
+        }
+        op.queryResultBlock = { result in
+            switch result {
+            case .success:
+                completion(.success(records))
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+        add(op)
     }
 }
