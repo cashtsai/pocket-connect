@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = Self.menuBarIcon()   // template "P" — auto light/dark
+            button.image = Self.menuBarIcon(connected: false)   // template — auto light/dark
             button.imagePosition = .imageOnly
             button.toolTip = "Pocket"
         }
@@ -130,23 +130,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         supervisor.probe(cfg.connectURL) { [weak self] ok in
             guard let self else { return }
             self.reachable = ok
-            // Icon stays the branded pocket mark; reachability shows on hover instead of
-            // cluttering the menu bar with a status glyph.
+            // v005 狀態列雙態:連線/離線各自的 template 圖(系統自動配
+            // light/dark);tooltip 保留文字說明。
+            self.statusItem.button?.image = Self.menuBarIcon(connected: ok)
             self.statusItem.button?.toolTip = ok ? "Pocket — ● 已連線" : "Pocket — ○ 離線"
             self.rebuildMenu()
         }
     }
 
     /// The real Pocket brand mark (denim-pocket outline), monochrome
-    /// template version for the menu bar. Loaded from the bundled
-    /// MenuBarIcon.png (menubar_36 from the official pocket brand set —
-    /// NOT a system-font "P" placeholder). Template images are
-    /// recolored by AppKit to match the active light/dark menu-bar
-    /// appearance, so the full-color cowboy-pocket icon stays in the
-    /// Dock/Finder while the bar shows a clean monochrome glyph of the
-    /// SAME logo.
-    private static func menuBarIcon() -> NSImage {
-        guard let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
+    /// template version for the menu bar — v005 dual-state
+    /// (MenuBarIconOn/Off from pocket-brand 3c0b221 狀態列雙態,connected =
+    /// on、offline = off). Template images are recolored by AppKit to match
+    /// the active light/dark menu-bar appearance, so the full-color
+    /// denim-pocket icon stays in the Dock/Finder while the bar shows a
+    /// clean monochrome glyph of the SAME logo. Falls back to the legacy
+    /// single-state MenuBarIcon.png when the dual-state assets are missing
+    /// from an old bundle.
+    private static func menuBarIcon(connected: Bool) -> NSImage {
+        let name = connected ? "MenuBarIconOn" : "MenuBarIconOff"
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png")
+                ?? Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
               let image = NSImage(contentsOf: url) else {
             // Fallback so the app never crashes if the asset is missing from
             // an old bundle — draws a plain "P" as a last resort.

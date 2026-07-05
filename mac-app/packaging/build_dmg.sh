@@ -29,6 +29,10 @@ cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
 # same brand set), not a system-font placeholder. isTemplate=true in code
 # handles the light/dark recoloring; this is just the source art.
 cp packaging/MenuBarIcon.png "$APPDIR/Contents/Resources/"
+# v005 dual-state menu bar (statusbar_on/off_36 from pocket-brand 3c0b221):
+# connected = on, offline = off; MenuBarIcon.png stays as legacy fallback.
+cp packaging/MenuBarIconOn.png "$APPDIR/Contents/Resources/"
+cp packaging/MenuBarIconOff.png "$APPDIR/Contents/Resources/"
 
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
 #   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper
