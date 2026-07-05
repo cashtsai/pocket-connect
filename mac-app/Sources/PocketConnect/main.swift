@@ -118,20 +118,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         supervisor.probe(cfg.connectURL) { [weak self] ok in
             guard let self else { return }
             self.reachable = ok
-            // Icon stays the branded "P"; reachability shows on hover instead of
+            // Icon stays the branded pocket mark; reachability shows on hover instead of
             // cluttering the menu bar with a status glyph.
             self.statusItem.button?.toolTip = ok ? "Pocket — ● 已連線" : "Pocket — ○ 離線"
             self.rebuildMenu()
         }
     }
 
-    /// The real Pocket brand mark (pocket-stitch stripe + "P"), monochrome
+    /// The real Pocket brand mark (denim-pocket outline), monochrome
     /// template version for the menu bar. Loaded from the bundled
-    /// MenuBarIcon.png (traced straight out of the official red-squircle
-    /// icon — NOT a system-font "P" placeholder). Template images are
+    /// MenuBarIcon.png (menubar_36 from the official pocket brand set —
+    /// NOT a system-font "P" placeholder). Template images are
     /// recolored by AppKit to match the active light/dark menu-bar
-    /// appearance, so the bold red squircle stays in the Dock/Finder while
-    /// the bar shows a clean monochrome glyph of the SAME logo.
+    /// appearance, so the full-color cowboy-pocket icon stays in the
+    /// Dock/Finder while the bar shows a clean monochrome glyph of the
+    /// SAME logo.
     private static func menuBarIcon() -> NSImage {
         guard let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
               let image = NSImage(contentsOf: url) else {

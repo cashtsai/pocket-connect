@@ -22,11 +22,12 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 # Optional: bundle the helper binaries so users need nothing pre-installed.
 #   cp "$(command -v cloudflared)" "$APPDIR/Contents/Resources/cloudflared"
 #   (bridge runtime would be bundled here too — see README "Bundling deps")
-# App icon (red squircle white "P") → bundled into Resources so Finder/Dock show it.
+# App icon (denim cowboy-pocket brand icon, pocket_macos_* full-size set from
+# the sun repo, built with iconutil) → bundled into Resources so Finder/Dock show it.
 cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
-# Menu bar glyph: the REAL brand mark (pocket-stitch stripe + "P") traced out
-# of the official icon, not a system-font placeholder. isTemplate=true in
-# code handles the light/dark recoloring; this is just the source art.
+# Menu bar glyph: monochrome pocket-outline template mark (menubar_36 from the
+# same brand set), not a system-font placeholder. isTemplate=true in code
+# handles the light/dark recoloring; this is just the source art.
 cp packaging/MenuBarIcon.png "$APPDIR/Contents/Resources/"
 
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
