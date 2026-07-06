@@ -140,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = Self.menuBarIcon(connected: false)   // template — auto light/dark
+            button.image = Self.menuBarIcon(connected: false)   // CIS §06 彩色雙態
             button.imagePosition = .imageOnly
             button.toolTip = "Pocket"
         }
@@ -175,18 +175,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         }
     }
 
-    /// The real Pocket brand mark (denim-pocket outline), monochrome
-    /// template version for the menu bar — v005 dual-state
-    /// (MenuBarIconOn/Off from pocket-brand 3c0b221 狀態列雙態,connected =
-    /// on、offline = off). Template images are recolored by AppKit to match
-    /// the active light/dark menu-bar appearance, so the full-color
-    /// denim-pocket icon stays in the Dock/Finder while the bar shows a
-    /// clean monochrome glyph of the SAME logo. Falls back to the legacy
-    /// single-state MenuBarIcon.png when the dual-state assets are missing
-    /// from an old bundle.
+    /// CIS §06 狀態列雙態(彩色,非 template):
+    ///   · connected = 貼紙口袋(box logo 貼紙縫上,MenuBarIconOn)
+    ///   · offline   = 素口袋(MenuBarIconOff)
+    /// 「連上了＝貼紙縫上去了」;彩色 icon 在一排灰 template icon 裡最大聲,
+    /// 是刻意的品牌選擇(與 `Pocket macOS` 的 MenuBarExtra 一致,PR #113)。
+    /// 因此 **isTemplate=false** —— 若設 true,AppKit 只拿 alpha 當遮罩,填滿的
+    /// 彩色口袋就變一坨白方塊(這正是先前的 bug)。Falls back to the legacy
+    /// monochrome MenuBarIcon.png(仍 template)when the dual-state assets are
+    /// missing from an old bundle.
     private static func menuBarIcon(connected: Bool) -> NSImage {
         let name = connected ? "MenuBarIconOn" : "MenuBarIconOff"
-        guard let url = Bundle.main.url(forResource: name, withExtension: "png")
+        let coloredURL = Bundle.main.url(forResource: name, withExtension: "png")
+        guard let url = coloredURL
                 ?? Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
               let image = NSImage(contentsOf: url) else {
             // Fallback so the app never crashes if the asset is missing from
@@ -206,10 +207,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             fallback.isTemplate = true
             return fallback
         }
-        // Menu bar glyphs read best around 18pt tall — scale the high-res
-        // source down while keeping it a template (system recolors it).
+        // Menu bar icons read best around 18pt tall — scale the high-res source.
         image.size = NSSize(width: 18 * (image.size.width / image.size.height), height: 18)
-        image.isTemplate = true
+        // Colored dual-state pocket renders as-is (CIS §06); only the legacy
+        // monochrome MenuBarIcon.png fallback is a recolorable template.
+        image.isTemplate = (coloredURL == nil)
         return image
     }
 
