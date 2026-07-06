@@ -62,8 +62,24 @@ if [[ "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
   /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$OUT/profile.plist" > "$DERIVED"
   /usr/libexec/PlistBuddy -c 'Add :com.apple.security.get-task-allow bool true' "$DERIVED" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c 'Set :com.apple.security.get-task-allow true' "$DERIVED"
+  # A provisioning profile hands CloudKit entitlements back in wildcard forms
+  # that CKContainer rejects at launch with CKException("malformed entitlements"):
+  #   · icloud-services arrives as the string "*" — must be an array of strings
+  #     (["CloudKit"]).
+  #   · icloud-container-environment arrives as an array [Production, Development]
+  #     — must be a single string; a Development-signed build wants "Development".
+  # Coerce both, or the app SIGABRTs during applicationDidFinishLaunching.
+  if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-services' "$DERIVED" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.icloud-services' "$DERIVED"
+    /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-services array' "$DERIVED"
+    /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-services:0 string CloudKit' "$DERIVED"
+  fi
+  if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-environment' "$DERIVED" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.icloud-container-environment' "$DERIVED"
+    /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-container-environment string Development' "$DERIVED"
+  fi
   SIGN_ENTITLEMENTS="$DERIVED"
-  echo "  entitlements: derived from profile (+ get-task-allow)"
+  echo "  entitlements: derived from profile (+ get-task-allow, CloudKit-coerced)"
 elif [[ "$SIGN_IDENTITY" != "-" ]]; then
   echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
 fi
