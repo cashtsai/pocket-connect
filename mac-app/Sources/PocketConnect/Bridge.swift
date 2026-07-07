@@ -11,10 +11,21 @@ import Foundation
 enum BridgeToken {
     // LaunchAgent plist that carries BRIDGE_TOKEN in its EnvironmentVariables.
     private static let plistPath = NSString(string: "~/Library/LaunchAgents/ai.studio.hermes-bridge.plist").expandingTildeInPath
+    // 使用者在「連線設定」手動貼的金鑰（自動讀不到時用）。
+    private static let overrideKey = "pocketBridgeTokenOverride"
 
-    /// Resolve the bridge master token: env var first, then the LaunchAgent plist.
+    /// 讓使用者手動設/清金鑰（連線設定的貼上欄位）。
+    static func setOverride(_ token: String?) {
+        let t = token?.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set((t?.isEmpty ?? true) ? nil : t, forKey: overrideKey)
+    }
+
+    /// Resolve the bridge master token: 手動覆寫 → env var → LaunchAgent plist。
     /// Returns nil if missing or an unconfigured placeholder.
     static func read() -> String? {
+        if let manual = UserDefaults.standard.string(forKey: overrideKey), let s = sanitize(manual) {
+            return s
+        }
         if let env = ProcessInfo.processInfo.environment["BRIDGE_TOKEN"], !env.isEmpty {
             return sanitize(env)
         }

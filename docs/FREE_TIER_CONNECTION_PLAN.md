@@ -86,12 +86,13 @@ quick tunnel 每次重開網址會換。對策（擇一或並用）：
 - [x] §1 打包 cloudflared 進 `.app`（`build_dmg.sh`；`resolveCloudflaredPath` 優先找打包版）
 - [x] §2 un-hardcode connectURL（`effectiveConnectURL = 自訂 ?? 自動tunnel ?? fallback`，5 處路由完成）
 - [x] §4 進階「連線設定」UI（控制台「連線設定」卡：網址欄位 + 測試連線 + 儲存 + 金鑰狀態；填了走自訂、留空走免費自動 tunnel）
-- [ ] §1 監看 process 掛掉自動重啟（現在 terminationHandler 只清狀態）
-- [ ] §3 **端到端測試**（桌面重開網址變 → 手機經 CloudKit 跟上）
-- [ ] §3 **iCloud 強制**（`CKContainer.accountStatus` 沒開就擋配對、引導開）
-- [ ] §4 金鑰讀不到時的手動貼欄位
+- [x] §1 監看 process 掛掉自動重啟（`shouldRun` + terminationHandler 3 秒後 relaunch）
+- [x] §3 **iCloud 強制**（免費路徑配對前查 `CKContainer.accountStatus`，沒開就擋、引導去開）
+- [x] §4 金鑰讀不到時的手動貼欄位（`BridgeToken.setOverride` + 連線設定 SecureField）
+- [x] cloudflared 打包 + codesign --deep 簽進 app、`--verify --deep --strict` 過；**實測 app 會自己 spawn 打包版 cloudflared 起臨時 tunnel**（adhoc 簽章、當子程序執行 OK）
+- [ ] §3 **端到端測試（需真手機）**：手機掃 QR 配對 → 桌面重開網址變 → 確認手機經 CloudKit 跟上還連得到
 - [ ] §5 測試矩陣：在家 / 出門 × 有無 Tailscale × 有無自訂網址
-- [ ] cloudflared 被 codesign --deep 簽進 hardened runtime 是否 OK（要實測簽章/啟動）
+- [ ] 公開發佈才需要：Developer ID 簽章 + notarization（現在是 Development 簽章）
 
 ---
 

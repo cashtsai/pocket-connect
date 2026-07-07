@@ -1,4 +1,5 @@
 import AppKit
+import CloudKit
 import PocketConnectKit
 import SwiftUI
 
@@ -72,6 +73,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var tokenDetected = false
     @Published var isTesting = false
     @Published var testResult: String?
+    @Published var tokenField = ""
     @Published var devices: [BridgeClient.PairedDevice] = []
     @Published var isLoadingDevices = false
     @Published var devicesError: String?
@@ -145,6 +147,10 @@ final class DashboardViewModel: ObservableObject {
 
     func saveConnection() {
         appDelegate?.setCustomConnectURL(customURLField)
+        if !tokenField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            BridgeToken.setOverride(tokenField)
+            tokenField = ""
+        }
         testResult = "已儲存"
         refresh()
     }
@@ -157,6 +163,27 @@ final class DashboardViewModel: ObservableObject {
         pairingExpired = false
         qrImage = nil
         guard Keychain.loadSessionToken() != nil else { pairingStatus = "請先登入"; return }
+        pairingStatus = "檢查中…"
+        // 免費模式（自動臨時 tunnel）網址會變，靠 CloudKit 同步給手機 → 必須開 iCloud。
+        // 有自訂固定網址（進階）就不需要（網址不變）。
+        if appDelegate.customConnectURL == nil {
+            CKContainer.default().accountStatus { [weak self] status, _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if status == .available {
+                        self.mintPairingCode()
+                    } else {
+                        self.pairingStatus = "免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。"
+                    }
+                }
+            }
+        } else {
+            mintPairingCode()
+        }
+    }
+
+    private func mintPairingCode() {
+        guard let appDelegate else { return }
         pairingStatus = "產生配對碼中…"
         pairKnownIDs = Set(devices.map(\.id))
         let coord = PairingCoordinator(client: appDelegate.bridge,
@@ -322,8 +349,12 @@ struct DashboardView: View {
                 .textFieldStyle(.roundedBorder)
             HStack(spacing: 6) {
                 Circle().fill(model.tokenDetected ? Brand.green : Brand.red).frame(width: 7, height: 7)
-                Text(model.tokenDetected ? "金鑰已自動讀到（來自 Hermes 設定）" : "找不到金鑰 — 檢查 Hermes 設定")
+                Text(model.tokenDetected ? "金鑰已自動讀到（來自 Hermes 設定）" : "找不到金鑰 — 手動貼上或檢查 Hermes 設定")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            if !model.tokenDetected {
+                SecureField("貼上 BRIDGE_TOKEN", text: $model.tokenField)
+                    .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 8) {
                 Button("測試連線") { model.testConnection() }

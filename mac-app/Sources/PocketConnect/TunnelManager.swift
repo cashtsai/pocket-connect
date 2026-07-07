@@ -11,6 +11,8 @@ final class TunnelManager {
     private let localPort: Int
     private let cloudflaredPath: String
     private var process: Process?
+    /// 是否應該保持運行 —— stop() 設 false，讓非預期結束才自動重啟。
+    private var shouldRun = false
 
     /// 拿到 / 變更公開網址時在主執行緒回呼。
     var onURL: ((String) -> Void)?
@@ -34,7 +36,13 @@ final class TunnelManager {
     }
 
     func start() {
-        guard process == nil, isAvailable else { return }
+        guard isAvailable else { return }
+        shouldRun = true
+        launch()
+    }
+
+    private func launch() {
+        guard process == nil, shouldRun else { return }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: cloudflaredPath)
         // quick tunnel:不需要帳號/設定檔,cloudflared 自己配一個 trycloudflare 網址。
@@ -48,12 +56,21 @@ final class TunnelManager {
             self?.scanForURL(s)
         }
         p.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.process = nil }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.process = nil
+                // 非預期結束（shouldRun 還是 true）→ 3 秒後自動重啟。
+                guard self.shouldRun else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    self?.launch()
+                }
+            }
         }
         do { try p.run(); process = p } catch { process = nil }
     }
 
     func stop() {
+        shouldRun = false
         (process?.standardError as? Pipe)?.fileHandleForReading.readabilityHandler = nil
         process?.terminate()
         process = nil
