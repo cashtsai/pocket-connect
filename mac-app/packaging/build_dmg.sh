@@ -59,12 +59,33 @@ done
 ENTITLEMENTS="packaging/PocketConnect.entitlements"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
 
+# ── Public-distribution track (Developer ID + notarization) ──────────────────
+# Off by default; the whole block below is gated on NOTARIZE=1 so the current
+# ad-hoc/Development flows are untouched. Turn it on ONLY once 善彰 has created a
+# "Developer ID Application" cert (see docs/M4_DEVELOPER_ID_SIGNING_SPEC.md §1 —
+# only the account holder can do that, it can't be automated).
+#
+# Then:  cp packaging/pocket-release.env.example ~/.pocket-release.env  and fill it
+#        NOTARIZE=1 ./packaging/build_dmg.sh
+#
+# ~/.pocket-release.env (never committed) supplies:
+#   SIGN_IDENTITY="Developer ID Application: <name> (4F8B93R3SH)"
+#   APPLE_ID="you@apple.id"          APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+#   TEAM_ID="4F8B93R3SH"
+NOTARIZE="${NOTARIZE:-0}"
+[[ -f "$HOME/.pocket-release.env" ]] && source "$HOME/.pocket-release.env"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # re-resolve in case the env file set it
+TEAM_ID="${TEAM_ID:-4F8B93R3SH}"
+
 # Embed the provisioning profile (real-signed builds only). Point PROFILE at a
 # .provisionprofile, or leave the default to auto-pick the installed
 # "Pocket Agent Desktop Mac Dev" profile by its known UUID.
 PROFILE="${PROFILE:-$HOME/Library/MobileDevice/Provisioning Profiles/bcd619b6-c187-49d5-8e53-085e02a79f79.provisionprofile}"
 SIGN_ENTITLEMENTS="$ENTITLEMENTS"
-if [[ "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
+# Development builds embed a provisioning profile + derive get-task-allow entitlements.
+# The Developer ID / notarization path (NOTARIZE=1) must NOT: notarized apps ship with
+# a hardened runtime and no get-task-allow, and Developer ID needs no embedded profile.
+if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
   echo "▸ embed provisioning profile: $(basename "$PROFILE")"
   cp "$PROFILE" "$APPDIR/Contents/embedded.provisionprofile"
   # A provisioned app must be signed with the profile's full entitlement set
@@ -98,8 +119,13 @@ elif [[ "$SIGN_IDENTITY" != "-" ]]; then
   echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
 fi
 
-echo "▸ codesign (identity: $SIGN_IDENTITY)"
-codesign --force --deep \
+# Hardened runtime is REQUIRED for notarization; only add it on the Developer ID
+# path (it conflicts with the Development build's get-task-allow entitlement).
+CODESIGN_OPTS=(--force --deep)
+[[ "$NOTARIZE" == "1" ]] && CODESIGN_OPTS+=(--options runtime --timestamp)
+
+echo "▸ codesign (identity: $SIGN_IDENTITY${NOTARIZE:+, hardened runtime})"
+codesign "${CODESIGN_OPTS[@]}" \
   --entitlements "$SIGN_ENTITLEMENTS" \
   --sign "$SIGN_IDENTITY" "$APPDIR" \
   || echo "  (codesign failed — ad-hoc build may still run locally)"
@@ -112,6 +138,32 @@ ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
 hdiutil create -volname "Pocket" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
 
+# ── Notarization (public-distribution track) ─────────────────────────────────
+# Submit the .dmg to Apple and staple the ticket so any Mac's Gatekeeper accepts
+# a double-click with no "unidentified developer" prompt. Gated on NOTARIZE=1.
+if [[ "$NOTARIZE" == "1" ]]; then
+  if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "✗ NOTARIZE=1 但 SIGN_IDENTITY 還是 ad-hoc(-)。要用 Developer ID Application 憑證。" >&2
+    echo "  在 ~/.pocket-release.env 設 SIGN_IDENTITY / APPLE_ID / APP_SPECIFIC_PASSWORD。" >&2
+    exit 1
+  fi
+  if [[ -z "${APPLE_ID:-}" || -z "${APP_SPECIFIC_PASSWORD:-}" ]]; then
+    echo "✗ 缺 APPLE_ID / APP_SPECIFIC_PASSWORD（放 ~/.pocket-release.env）。" >&2
+    echo "  App 專用密碼在 https://account.apple.com → 登入與安全 → App 專用密碼 產生。" >&2
+    exit 1
+  fi
+  echo "▸ notarytool submit（送 Apple 公證，通常幾分鐘）"
+  xcrun notarytool submit "$DMG" \
+    --apple-id "$APPLE_ID" --team-id "$TEAM_ID" \
+    --password "$APP_SPECIFIC_PASSWORD" --wait
+  echo "▸ stapler staple"
+  xcrun stapler staple "$DMG"
+  echo "▸ 驗收：spctl 應回 accepted / source=Notarized Developer ID"
+  spctl -a -vvv "$APPDIR" 2>&1 || true
+fi
+
 echo "✓ done:"
 echo "  app: $APPDIR"
 echo "  dmg: $DMG"
+[[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" == "-" ]] && \
+  echo "  ⚠ ad-hoc 簽章 — 別台 Mac 會被 Gatekeeper 擋，需右鍵→打開（見 docs/INSTALL_FAQ.md）。"
