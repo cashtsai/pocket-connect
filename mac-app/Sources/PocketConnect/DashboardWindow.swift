@@ -87,8 +87,8 @@ final class DashboardViewModel: ObservableObject {
     func refresh() {
         guard let appDelegate else { return }
         cloudStatusText = appDelegate.cloudStatusText
-        connectHost = URL(string: appDelegate.cfg.connectURL)?.host ?? appDelegate.cfg.connectURL
-        appDelegate.supervisor.probeLatency(appDelegate.cfg.connectURL) { [weak self] ok, ms in
+        connectHost = URL(string: appDelegate.effectiveConnectURL)?.host ?? appDelegate.effectiveConnectURL
+        appDelegate.supervisor.probeLatency(appDelegate.effectiveConnectURL) { [weak self] ok, ms in
             self?.bridgeReachable = ok
             self?.bridgeLatencyMs = ms
         }

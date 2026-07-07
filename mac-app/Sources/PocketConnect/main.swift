@@ -111,7 +111,17 @@ final class Supervisor {
 final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     let cfg = Config()
     lazy var supervisor = Supervisor(cfg)
-    lazy var bridge = BridgeClient(baseURL: cfg.connectURL)
+    // 連線網址：使用者自訂（進階）> 自動臨時 tunnel（免費）> 內建 fallback。
+    private let customURLKey = "pocketCustomConnectURL"
+    var customConnectURL: String? {
+        let s = UserDefaults.standard.string(forKey: customURLKey)
+        return (s?.isEmpty ?? true) ? nil : s
+    }
+    var autoTunnelURL: String?
+    var effectiveConnectURL: String { customConnectURL ?? autoTunnelURL ?? cfg.connectURL }
+    lazy var bridge = BridgeClient(baseURL: effectiveConnectURL)
+    lazy var tunnelManager = TunnelManager(localPort: cfg.bridgePort,
+                                           cloudflaredPath: TunnelManager.resolveCloudflaredPath())
     var statusItem: NSStatusItem!
     var downloadQRWindow: NSWindow?
     var reachable = false
@@ -161,10 +171,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         // CloudKit discovery (M2a) — self-gating: silently off on builds
         // without the iCloud entitlement or when no iCloud account is present.
         setupCloudSync()
+
+        // 免費零設定：沒設自己的固定網址 → 自動開一條臨時 tunnel（trycloudflare），
+        // 網址回來就重建 client、刷新畫面。設了自訂網址（進階）就不開。
+        if customConnectURL == nil {
+            tunnelManager.onURL = { [weak self] url in
+                guard let self else { return }
+                self.autoTunnelURL = url
+                self.onConnectURLChanged()
+            }
+            tunnelManager.start()
+        }
     }
 
     func poll() {
-        supervisor.probe(cfg.connectURL) { [weak self] ok in
+        supervisor.probe(effectiveConnectURL) { [weak self] ok in
             guard let self else { return }
             self.reachable = ok
             // v005 狀態列雙態:連線/離線各自的 template 圖(系統自動配
@@ -242,6 +263,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     /// 未登入時選單的「登入…」入口 → 開登入頁。
     @objc func showLogin() { presentOnboarding() }
 
+    /// 連線網址變了（拿到臨時 tunnel、或使用者改自訂網址）→ 重建 client、更新畫面。
+    func onConnectURLChanged() {
+        bridge = BridgeClient(baseURL: effectiveConnectURL)
+        rebuildMenu()
+        dashboardModel?.refresh()
+        poll()
+    }
+
     /// 把登入時的網路錯誤翻成看得懂、可行動的中文（防呆）。
     static func friendlyLoginError(_ e: Error) -> String {
         if let urlErr = e as? URLError {
@@ -275,7 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     @objc func toggleServices() { supervisor.toggle() }
 
-    @objc func quit() { supervisor.stop(); NSApp.terminate(nil) }
+    @objc func quit() { tunnelManager.stop(); supervisor.stop(); NSApp.terminate(nil) }
 
     // MARK: Download-app QR (unchanged behaviour, now using shared makeQR).
     @objc func showDownloadQR() {
