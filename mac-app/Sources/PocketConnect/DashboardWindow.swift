@@ -66,6 +66,12 @@ final class DashboardViewModel: ObservableObject {
     @Published var bridgeLatencyMs: Double?
     @Published var connectHost = ""
     @Published var cloudStatusText = "—"
+    // 連線設定（進階）
+    @Published var customURLField = ""
+    @Published var usingCustomURL = false
+    @Published var tokenDetected = false
+    @Published var isTesting = false
+    @Published var testResult: String?
     @Published var devices: [BridgeClient.PairedDevice] = []
     @Published var isLoadingDevices = false
     @Published var devicesError: String?
@@ -82,12 +88,17 @@ final class DashboardViewModel: ObservableObject {
     private var pairPollTimer: Timer?
     private var pairKnownIDs: Set<String> = []
 
-    init(appDelegate: AppDelegate) { self.appDelegate = appDelegate }
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
+        self.customURLField = appDelegate.customConnectURL ?? ""   // 一次性載入，別在 refresh 蓋掉使用者打字
+    }
 
     func refresh() {
         guard let appDelegate else { return }
         cloudStatusText = appDelegate.cloudStatusText
         connectHost = URL(string: appDelegate.effectiveConnectURL)?.host ?? appDelegate.effectiveConnectURL
+        usingCustomURL = appDelegate.customConnectURL != nil
+        tokenDetected = BridgeToken.read() != nil
         appDelegate.supervisor.probeLatency(appDelegate.effectiveConnectURL) { [weak self] ok, ms in
             self?.bridgeReachable = ok
             self?.bridgeLatencyMs = ms
@@ -117,6 +128,26 @@ final class DashboardViewModel: ObservableObject {
 
     /// 登出並重新設定（清除登入 + 重跑首次設定）。
     func resetOnboarding() { appDelegate?.resetOnboarding() }
+
+    // MARK: 連線設定（進階）
+
+    func testConnection() {
+        guard let appDelegate else { return }
+        let target = customURLField.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = target.isEmpty ? appDelegate.effectiveConnectURL : target
+        isTesting = true
+        testResult = nil
+        appDelegate.supervisor.probeLatency(url) { [weak self] ok, ms in
+            self?.isTesting = false
+            self?.testResult = ok ? String(format: "● 連得到 · %.0fms", ms ?? 0) : "✗ 連不到，檢查網址"
+        }
+    }
+
+    func saveConnection() {
+        appDelegate?.setCustomConnectURL(customURLField)
+        testResult = "已儲存"
+        refresh()
+    }
 
     // MARK: 內嵌配對
 
@@ -189,6 +220,7 @@ struct DashboardView: View {
                     wordmarkHeader
                     card { pairingSection }
                     card { connectionSection }
+                    card { connectionSettingsSection }
                     card { devicesSection }
                 }
                 .padding(.horizontal, 20)
@@ -275,6 +307,33 @@ struct DashboardView: View {
             }
             if !model.connectHost.isEmpty {
                 Text(model.connectHost).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: 連線設定（進階）
+
+    private var connectionSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("連線設定")
+            Text("你的 Pocket 網址（留空 = 用免費自動連線）")
+                .font(.caption).foregroundStyle(.secondary)
+            TextField("https://your-bridge.example.com", text: $model.customURLField)
+                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 6) {
+                Circle().fill(model.tokenDetected ? Brand.green : Brand.red).frame(width: 7, height: 7)
+                Text(model.tokenDetected ? "金鑰已自動讀到（來自 Hermes 設定）" : "找不到金鑰 — 檢查 Hermes 設定")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                Button("測試連線") { model.testConnection() }
+                    .buttonStyle(.bordered).controlSize(.small).disabled(model.isTesting)
+                Button("儲存") { model.saveConnection() }
+                    .buttonStyle(.borderedProminent).tint(Brand.red).controlSize(.small)
+                if model.isTesting { ProgressView().controlSize(.small) }
+                if let r = model.testResult {
+                    Text(r).font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
     }

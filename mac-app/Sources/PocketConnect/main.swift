@@ -271,6 +271,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         poll()
     }
 
+    /// 使用者設/清自己的固定網址（進階）。填了 → 停臨時 tunnel、用自訂；
+    /// 清空 → 回到免費自動 tunnel。
+    func setCustomConnectURL(_ url: String?) {
+        let trimmed = url?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        UserDefaults.standard.set(value, forKey: customURLKey)
+        if value == nil {
+            // 回到免費自動 tunnel
+            tunnelManager.onURL = { [weak self] u in
+                guard let self else { return }
+                self.autoTunnelURL = u
+                self.onConnectURLChanged()
+            }
+            tunnelManager.start()
+        } else {
+            // 用自訂網址 → 不需要臨時 tunnel
+            tunnelManager.stop()
+            autoTunnelURL = nil
+        }
+        onConnectURLChanged()
+    }
+
     /// 把登入時的網路錯誤翻成看得懂、可行動的中文（防呆）。
     static func friendlyLoginError(_ e: Error) -> String {
         if let urlErr = e as? URLError {

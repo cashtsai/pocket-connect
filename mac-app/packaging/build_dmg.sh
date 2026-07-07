@@ -41,6 +41,13 @@ cp packaging/pocket-wordmark.png "$APPDIR/Contents/Resources/"
 cp packaging/LuckiestGuy-Regular.ttf "$APPDIR/Contents/Resources/"
 cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null || true
 
+# 免費零設定連線用的 cloudflared（自動臨時 tunnel）。有系統版就打包進去，讓使用者
+# 不用自己裝；TunnelManager.resolveCloudflaredPath() 會優先找這個打包版。-L 跟隨
+# Homebrew 的 symlink 複製真檔。codesign --deep 會一併簽它。
+for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
+  if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
+done
+
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
 #   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper
 #     will warn on other Macs — see README).
