@@ -44,8 +44,9 @@ tailnet(100.x) → LAN(192.168.x / 10.x / 172.16-31.x) → 公開 tunnel URL
 
 quick tunnel 每次重開網址會換。對策（擇一或並用）：
 
-- [ ] **靠探測兜底**：桌面把最新 `hostCandidates`（含新 tunnel URL + LAN）同步給手機，手機自動跟上。
-      ⚠️ **待驗證**：現在 `hostCandidates` 是**經 CloudKit discovery** 傳到手機的（M2a/M2b）。若使用者沒開 iCloud，這條就斷 → 免費仔可能收不到更新的 URL。需確認/補一條不依賴 CloudKit 的更新路徑（例如配對後手機定期回問 bridge 現值）。
+- [x] **靠探測兜底（決策 2026-07-07）**：桌面把最新 `hostCandidates`（含新 tunnel URL + LAN）經 **CloudKit discovery** 同步給手機，手機自動跟上。
+      **免費 tier 強制要求開 iCloud**：Sign in with Apple 已是必要，且 app 的 CloudKit discovery 就綁 Apple 登入模式（`permitsCloudKit == .apple`）——所以免費仔**沒開 iCloud 就擋住 / 引導他去開，不給用**（「不開不要用，不然還叫免費仔嗎」）。這樣新 tunnel URL 一定經 CloudKit 傳到手機，**不用再做非-CloudKit 更新路徑**。
+- [ ] 要做：免費路徑上偵測 iCloud 帳號狀態，未開 → 擋住配對並引導開啟（`CKContainer.accountStatus`）。
 - [ ] **在家以 LAN 為主**：LAN IP 相對穩定，tunnel 只當出門備援，降低「網址變」的衝擊。
 - [ ] 驗收：桌面重開後，手機（在家 LAN / 出門 tunnel）都還連得到。
 
@@ -77,7 +78,7 @@ quick tunnel 每次重開網址會換。對策（擇一或並用）：
 
 - [ ] cloudflared **打包進 app** vs 偵測系統已裝？（免費仔多半沒裝 → 傾向打包）
 - [ ] quick tunnel 的**可靠度/速率限制**可接受嗎？（Cloudflare 免費服務、非正式 SLA；個人用通常 OK）
-- [ ] **CloudKit discovery** 是否穩定把 `hostCandidates` 傳到手機？（§3 待驗證，這是免費仔出門能不能自動跟上新網址的關鍵）
+- [x] ~~CloudKit discovery 傳 hostCandidates 給手機？~~ **已決策**：免費 tier 強制開 iCloud（見 §3），CloudKit 就是傳遞管道，不另做備援。
 
 ## 7. 建議做的順序
 
