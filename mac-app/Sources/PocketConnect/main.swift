@@ -217,42 +217,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     func rebuildMenu() {
         let m = NSMenu()
-        let header = NSMenuItem(title: "Pocket", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        m.addItem(header)
-        let status = NSMenuItem(
-            title: reachable ? "● 已連線  \(cfg.connectURL)" : (supervisor.running ? "◐ 服務啟動中…" : "○ 離線"),
-            action: nil, keyEquivalent: "")
+        // 第一行：燈號 + 連線狀態（反白不可點）。
+        let status = NSMenuItem(title: reachable ? "● 已連線" : "○ 未連線", action: nil, keyEquivalent: "")
         status.isEnabled = false
         m.addItem(status)
-        // Login state line.
-        let loginLine = NSMenuItem(title: isSignedIn ? "✓ 已用 Apple 登入" : "— 尚未登入", action: nil, keyEquivalent: "")
+        // 第二行：登入狀態（反白不可點）。
+        let loginLine = NSMenuItem(title: isSignedIn ? "● 已登入" : "○ 尚未登入", action: nil, keyEquivalent: "")
         loginLine.isEnabled = false
         m.addItem(loginLine)
-        let cloudLine = NSMenuItem(title: "iCloud 發現:\(cloudStatusText)", action: nil, keyEquivalent: "")
-        cloudLine.isEnabled = false
-        m.addItem(cloudLine)
         m.addItem(.separator())
-        m.addItem(NSMenuItem(title: "儀表板…", action: #selector(showDashboard), keyEquivalent: "d"))
-        m.addItem(NSMenuItem(title: "複製連線網址", action: #selector(copyURL), keyEquivalent: "c"))
-        m.addItem(NSMenuItem(title: "顯示下載 App QR…", action: #selector(showDownloadQR), keyEquivalent: "q"))
-        // Pairing QR — only actionable once signed in; otherwise prompts login.
-        let pairItem = NSMenuItem(title: isSignedIn ? "配對這台桌機 QR…" : "配對這台桌機(請先登入)",
-                                  action: #selector(showPairingQR), keyEquivalent: "p")
-        m.addItem(pairItem)
+        // 未登入 → 只能「登入」；登入後才有「控制台」。
+        if isSignedIn {
+            m.addItem(NSMenuItem(title: "控制台", action: #selector(showDashboard), keyEquivalent: "d"))
+        } else {
+            m.addItem(NSMenuItem(title: "登入…", action: #selector(showLogin), keyEquivalent: "d"))
+        }
         m.addItem(.separator())
-        m.addItem(NSMenuItem(title: supervisor.running ? "停止服務" : "啟動服務",
-                             action: #selector(toggleServices), keyEquivalent: "s"))
-        m.addItem(NSMenuItem(title: "重新設定…", action: #selector(resetOnboarding), keyEquivalent: ""))
-        m.addItem(.separator())
-        m.addItem(NSMenuItem(title: "結束 Pocket", action: #selector(quit), keyEquivalent: ""))
+        m.addItem(NSMenuItem(title: "狀態列隱藏", action: #selector(hideStatusBar), keyEquivalent: ""))
+        m.addItem(NSMenuItem(title: "結束", action: #selector(quit), keyEquivalent: ""))
         m.items.forEach { $0.target = self }
         statusItem.menu = m
     }
 
-    @objc func copyURL() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(cfg.connectURL, forType: .string)
+    /// 未登入時選單的「登入…」入口 → 開登入頁。
+    @objc func showLogin() { presentOnboarding() }
+
+    /// 把登入時的網路錯誤翻成看得懂、可行動的中文（防呆）。
+    static func friendlyLoginError(_ e: Error) -> String {
+        if let urlErr = e as? URLError {
+            switch urlErr.code {
+            case .timedOut:
+                return "連線逾時,請確認網路後再按一次登入。"
+            case .notConnectedToInternet, .networkConnectionLost:
+                return "網路中斷了,確認網路後再試一次。"
+            case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return "暫時連不到伺服器,請稍後再試。"
+            default:
+                return "登入連線出錯（\(urlErr.code.rawValue)）,請再試一次。"
+            }
+        }
+        return "登入失敗:\(e.localizedDescription)"
+    }
+
+    /// 隱藏選單列圖示（服務照跑）。先跳提醒說明怎麼叫回來，按「確認」才真的隱藏。
+    @objc func hideStatusBar() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "要隱藏選單列圖示嗎？"
+        alert.informativeText = "Pocket 會繼續在背景執行（配對、連線都照常）。\n\n之後要再顯示圖示，從「應用程式」或 Launchpad 重新開啟 Pocket 就會回來。"
+        alert.addButton(withTitle: "確認隱藏")
+        alert.addButton(withTitle: "取消")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            statusItem.isVisible = false
+        }
     }
 
     @objc func toggleServices() { supervisor.toggle() }
@@ -285,35 +303,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         return win
     }
 
-    // MARK: Pairing QR from the menu (post-onboarding).
+    // MARK: 配對新裝置 — 開控制台並在裡面內嵌產生 QR（不再另開視窗）。
     @objc func showPairingQR() {
         guard isSignedIn else { presentOnboarding(); return }
-        let view = pairWindowView ?? PairingQRView(frame: NSRect(x: 0, y: 0, width: 420, height: 460))
-        pairWindowView = view
-        let coordinator = pairWindowCoordinator ?? PairingCoordinator(
-            client: bridge, sessionProvider: { Keychain.loadSessionToken() })
-        pairWindowCoordinator = coordinator
-        coordinator.onState = { [weak view] s in view?.apply(s) }
-        view.onRegenerate = { [weak coordinator] in coordinator?.refresh() }
-
-        let win = pairWindow ?? {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 460),
-                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            w.title = "配對這台桌機"
-            w.center()
-            w.contentView = view
-            pairWindow = w
-            return w
-        }()
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        coordinator.refresh()
+        showDashboard()
+        dashboardModel?.startPairing()
     }
 
     // MARK: Onboarding
     @objc func resetOnboarding() {
         Keychain.clearSessionToken()
         UserDefaults.standard.set(false, forKey: cfg.onboardedKey)
+        // 登出 → 強制關掉控制台，回到登入頁。
+        dashboardModel?.stopPairing()
+        dashboardWindow?.close()
+        dashboardWindow = nil
+        dashboardModel = nil
         rebuildMenu()
         presentOnboarding()
     }
@@ -339,14 +344,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
                                       displayName: cred.displayName, email: cred.email) { authResult in
                     switch authResult {
                     case .failure(let e):
-                        c.showSignInError("登入伺服器失敗:\(e)")
+                        c.showSignInError(Self.friendlyLoginError(e))
                     case .success(let session):
-                        guard Keychain.saveSessionToken(session.sessionToken) else {
-                            return c.showSignInError("無法寫入 Keychain")
+                        let st = Keychain.saveSessionToken(session.sessionToken)
+                        guard st == errSecSuccess else {
+                            return c.showSignInError("無法寫入 Keychain (OSStatus \(st))")
                         }
                         UserDefaults.standard.set(true, forKey: self.cfg.onboardedKey)
                         self.rebuildMenu()
-                        self.startOnboardingPairing(c)
+                        // 登入成功 → 關掉登入頁，直接打開控制台。
+                        c.window?.close()
+                        self.onboarding = nil
+                        self.showDashboard()
                     }
                 }
             }

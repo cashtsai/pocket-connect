@@ -33,6 +33,13 @@ cp packaging/MenuBarIcon.png "$APPDIR/Contents/Resources/"
 # connected = on, offline = off; MenuBarIcon.png stays as legacy fallback.
 cp packaging/MenuBarIconOn.png "$APPDIR/Contents/Resources/"
 cp packaging/MenuBarIconOff.png "$APPDIR/Contents/Resources/"
+# Brand assets for the onboarding/login screen — use the FINALIZED assets, never
+# a homemade stand-in: the real POCKET wordmark (Luckiest Guy, red) + the Luckiest
+# Guy font itself (registered at runtime for the rainbow slogan). Same art the iOS
+# login uses. See docs/BRAND_CLOUD_BACKGROUND.md + brand CIS.
+cp packaging/pocket-wordmark.png "$APPDIR/Contents/Resources/"
+cp packaging/LuckiestGuy-Regular.ttf "$APPDIR/Contents/Resources/"
+cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null || true
 
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
 #   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper

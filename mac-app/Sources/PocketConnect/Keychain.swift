@@ -10,33 +10,42 @@ enum Keychain {
     // Service/account namespace for the account session token.
     private static let service = "com.pocketagent.desktop"
     private static let account = "account-session-token"
+    // Concrete keychain access group. The provisioning profile grants the
+    // wildcard `4F8B93R3SH.*`; macOS can't resolve a wildcard as the *write*
+    // group, so SecItemAdd must name a concrete group the wildcard covers —
+    // otherwise it fails with errSecMissingEntitlement (-34018). We also opt
+    // into the data-protection keychain so access-group semantics apply on
+    // macOS the same way they do on iOS.
+    private static let accessGroup = "4F8B93R3SH.com.pocketagent.desktop"
 
-    /// Store (or replace) the session token. Returns true on success.
-    @discardableResult
-    static func saveSessionToken(_ token: String) -> Bool {
-        let data = Data(token.utf8)
-        let query: [String: Any] = [
+    /// Base query shared by save/load/clear so the item is addressed identically.
+    private static func baseQuery() -> [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecAttrAccessGroup as String: accessGroup,
+            kSecUseDataProtectionKeychain as String: true,
         ]
+    }
+
+    /// Store (or replace) the session token. Returns the SecItemAdd OSStatus
+    /// (`errSecSuccess` on success) so callers can surface the real code.
+    @discardableResult
+    static func saveSessionToken(_ token: String) -> OSStatus {
+        var attrs = baseQuery()
         // Delete any existing item first, then add fresh — simplest correct upsert.
-        SecItemDelete(query as CFDictionary)
-        var attrs = query
-        attrs[kSecValueData as String] = data
+        SecItemDelete(attrs as CFDictionary)
+        attrs[kSecValueData as String] = Data(token.utf8)
         attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        return SecItemAdd(attrs as CFDictionary, nil) == errSecSuccess
+        return SecItemAdd(attrs as CFDictionary, nil)
     }
 
     /// Load the stored session token, or nil if none.
     static func loadSessionToken() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        var query = baseQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
               let data = out as? Data,
@@ -47,11 +56,6 @@ enum Keychain {
 
     /// Remove the stored session token (used by "重新設定").
     static func clearSessionToken() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(baseQuery() as CFDictionary)
     }
 }
