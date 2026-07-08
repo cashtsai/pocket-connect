@@ -1,4 +1,73 @@
 import AppKit
+import AuthenticationServices
+import CoreText
+
+// Pocket 品牌色（CIS 五色瑪利歐：紅/奶油/黃/藍/綠）— 桌面 onboarding 用，
+// 對齊 iOS 登入頁的觀感。這裡就地定義，pocket-connect 不依賴 PocketDesign。
+enum PocketPalette {
+    static func c(_ hex: UInt32) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+    static let red    = c(0xEE2D2A)
+    static let cream  = c(0xFFF2D6)
+    static let yellow = c(0xFBD000)
+    static let blue   = c(0x049CD8)
+    static let green  = c(0x43B14A)
+    static let ink    = c(0x17171A)
+    static let espresso = c(0x2A1D18)   // 雲朵線色（配奶油底，同 iOS PocketSkyBackground）
+}
+
+/// 奶油底 + 淡雲圖樣背景（呼應 iOS 登入頁）。純繪製、無資產。
+///
+/// 品牌特規（logo 頁）：設 `logoSafeZone`（本 view 自身座標）後,任何**與該區相交
+/// 的雲會被略過**,確保 logo 正下方/周圍淨空、logo 不壓到雲。其他頁面 `logoSafeZone`
+/// 留 nil ＝ 原本的完整雲背景。詳見 docs/BRAND_CLOUD_BACKGROUND.md。
+final class BrandBackgroundView: NSView {
+    /// 非 nil 時，落在此矩形內（相交）的雲不畫 — logo 頁特規。
+    var logoSafeZone: NSRect? { didSet { needsDisplay = true } }
+
+    override var isFlipped: Bool { true }   // y 向下，與 iOS Canvas 同座標
+
+    override func draw(_ dirtyRect: NSRect) {
+        PocketPalette.cream.setFill()
+        bounds.fill()
+        // 與 iOS PocketSkyBackground 完全一致：espresso 9%、線寬 1.5、
+        // 300×220 網格每格一大一小(小雲 0.62 錯開 180,150)的瑪利歐雲。
+        PocketPalette.espresso.withAlphaComponent(0.09).setStroke()
+        let tileW: CGFloat = 300, tileH: CGFloat = 220
+        var y: CGFloat = 0
+        while y < bounds.height + tileH {
+            var x: CGFloat = 0
+            while x < bounds.width + tileW {
+                for path in [cloud(scale: 1, dx: x, dy: y),
+                             cloud(scale: 0.62, dx: x + 180, dy: y + 150)] {
+                    if let safe = logoSafeZone, path.bounds.intersects(safe) { continue }  // logo 頁：跳過壓到 logo 的雲
+                    path.stroke()
+                }
+                x += tileW
+            }
+            y += tileH
+        }
+    }
+
+    /// 單朵瑪利歐雲（圓凸頂、平底），local 座標同 iOS PocketSkyBackground.cloud。
+    private func cloud(scale s: CGFloat, dx: CGFloat, dy: CGFloat) -> NSBezierPath {
+        func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * s + dx, y: y * s + dy) }
+        let p = NSBezierPath()
+        p.lineWidth = 1.5
+        p.lineCapStyle = .round; p.lineJoinStyle = .round
+        p.move(to: P(40, 96))
+        p.curve(to: P(36, 70), controlPoint1: P(22, 96), controlPoint2: P(18, 74))
+        p.curve(to: P(70, 62), controlPoint1: P(33, 50), controlPoint2: P(62, 44))
+        p.curve(to: P(104, 68), controlPoint1: P(76, 46), controlPoint2: P(104, 48))
+        p.curve(to: P(108, 90), controlPoint1: P(124, 64), controlPoint2: P(126, 86))
+        p.line(to: P(108, 96))
+        p.close()
+        return p
+    }
+}
 
 // First-run onboarding + the reusable "pair this desktop" QR surface.
 //
@@ -135,17 +204,37 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let pairingView = PairingQRView(frame: NSRect(x: 0, y: 0, width: 420, height: 480))
 
     // Welcome-screen controls (kept around so we can swap views in place).
-    private let titleLabel = NSTextField(labelWithString: "歡迎使用 Pocket")
+    private let background = BrandBackgroundView(frame: NSRect(x: 0, y: 0, width: 420, height: 480))
+    private let wordmark = NSImageView()   // 真 POCKET wordmark 資產（pocket-wordmark.png），非自製字
+    private let tagline = NSTextField(labelWithString: "")
     private let bodyLabel = NSTextField(wrappingLabelWithString:
-        "這台 Mac 會成為你的 Pocket 執行主機。手機當遙控,所有登入與金鑰都留在這台桌機。\n\n先用 Apple 登入,完成後掃 QR 就能把手機配對上來。")
-    private let signInButton = NSButton(title: "  使用 Apple 登入  ", target: nil, action: nil)
+        "這台 Mac 會成為你的 Pocket 執行主機。手機當遙控,所有登入與金鑰都留在這台桌機。\n先用 Apple 登入,完成後掃 QR 就能把手機配對上來。")
+    private let appleButton = ASAuthorizationAppleIDButton(authorizationButtonType: .signIn,
+                                                           authorizationButtonStyle: .black)
+    private let footerLabel = NSTextField(labelWithString: "登入即代表你同意基本使用條款。")
     private let errorLabel = NSTextField(labelWithString: "")
     private let spinner = NSProgressIndicator()
 
+    /// 註冊 bundle 內的 Luckiest Guy（品牌 wordmark 字型）一次，slogan 用它。
+    private static let brandFontRegistered: Bool = {
+        guard let url = Bundle.main.url(forResource: "LuckiestGuy-Regular", withExtension: "ttf") else { return false }
+        return CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }()
+
+    /// Luckiest Guy；未註冊成功時安全退回系統重體（不應發生，資產已 bundle）。
+    private static func brandFont(_ size: CGFloat) -> NSFont {
+        _ = brandFontRegistered
+        return NSFont(name: "LuckiestGuy-Regular", size: size) ?? .systemFont(ofSize: size, weight: .black)
+    }
+
     init() {
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 480),
-                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        win.title = "Pocket 設定"
+                           styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+        win.title = "Pocket"
+        win.titleVisibility = .hidden
+        win.titlebarAppearsTransparent = true          // 奶油底貫到頂，去掉系統白標題列
+        win.isMovableByWindowBackground = true
+        win.backgroundColor = PocketPalette.cream
         win.center()
         super.init(window: win)
         win.delegate = self
@@ -154,32 +243,87 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
 
+    /// 彩虹副標「PUT WORLD INTO POCKET」— 逐字上色，對齊 iOS 登入頁。
+    private func rainbowTagline() -> NSAttributedString {
+        let words: [(String, NSColor)] = [
+            ("PUT ", PocketPalette.red), ("WORLD ", PocketPalette.yellow),
+            ("INTO ", PocketPalette.blue), ("POCKET", PocketPalette.green),
+        ]
+        let out = NSMutableAttributedString()
+        let font = Self.brandFont(17)   // Luckiest Guy — slogan 與 wordmark 同一套字（對齊 iOS）
+        let para = NSMutableParagraphStyle(); para.alignment = .center   // 設 attributedStringValue 會蓋掉 field 的 alignment，這裡補回置中
+        for (w, color) in words {
+            out.append(NSAttributedString(string: w, attributes: [
+                .foregroundColor: color, .font: font, .kern: 0.5, .paragraphStyle: para,
+            ]))
+        }
+        return out
+    }
+
     private func buildWelcome() {
-        titleLabel.frame = NSRect(x: 30, y: 400, width: 360, height: 32)
-        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
-        titleLabel.alignment = .center
-        bodyLabel.frame = NSRect(x: 30, y: 230, width: 360, height: 150)
+        background.frame = container.bounds
+        background.autoresizingMask = [.width, .height]
+
+        // 真 wordmark 資產（紅字 PNG，iOS 登入頁同款）；等比縮到寬 232。
+        if let url = Bundle.main.url(forResource: "pocket-wordmark", withExtension: "png"),
+           let img = NSImage(contentsOf: url) {
+            wordmark.image = img
+            let w: CGFloat = 232, h = w * (img.size.height / max(img.size.width, 1))
+            wordmark.frame = NSRect(x: (420 - w) / 2, y: 316, width: w, height: h)
+        } else {
+            wordmark.frame = NSRect(x: 94, y: 316, width: 232, height: 56)
+        }
+        wordmark.imageScaling = .scaleProportionallyUpOrDown
+
+        tagline.attributedStringValue = rainbowTagline()
+        tagline.frame = NSRect(x: 30, y: 286, width: 360, height: 24)
+        tagline.alignment = .center
+        tagline.drawsBackground = false
+
+        bodyLabel.frame = NSRect(x: 40, y: 178, width: 340, height: 72)
         bodyLabel.alignment = .center
-        bodyLabel.textColor = .secondaryLabelColor
-        signInButton.frame = NSRect(x: 110, y: 150, width: 200, height: 40)
-        signInButton.bezelStyle = .rounded
-        signInButton.controlSize = .large
-        signInButton.font = .systemFont(ofSize: 15, weight: .medium)
-        signInButton.target = self
-        signInButton.action = #selector(tapSignIn)
-        errorLabel.frame = NSRect(x: 30, y: 110, width: 360, height: 20)
+        bodyLabel.font = .systemFont(ofSize: 13)
+        bodyLabel.textColor = PocketPalette.ink.withAlphaComponent(0.62)
+        bodyLabel.drawsBackground = false
+
+        errorLabel.frame = NSRect(x: 30, y: 150, width: 360, height: 20)
         errorLabel.alignment = .center
-        errorLabel.textColor = .systemRed
-        spinner.frame = NSRect(x: 200, y: 100, width: 20, height: 20)
+        errorLabel.textColor = PocketPalette.red
+        errorLabel.drawsBackground = false
+
+        appleButton.frame = NSRect(x: 70, y: 92, width: 280, height: 46)
+        appleButton.cornerRadius = 12
+        appleButton.target = self
+        appleButton.action = #selector(tapSignIn)
+
+        spinner.frame = NSRect(x: 200, y: 60, width: 20, height: 20)
         spinner.style = .spinning
         spinner.isDisplayedWhenStopped = false
+
+        footerLabel.frame = NSRect(x: 30, y: 34, width: 360, height: 18)
+        footerLabel.alignment = .center
+        footerLabel.font = .systemFont(ofSize: 11)
+        footerLabel.textColor = PocketPalette.ink.withAlphaComponent(0.4)
+        footerLabel.drawsBackground = false
+
+        // logo 頁特規：保留 wordmark+tagline 區並向下延伸，落在此區的雲不畫，
+        // 讓 logo 正下方淨空、不壓到雲。（其他頁面不設 → 完整雲背景。）
+        let logoUp = wordmark.frame.union(tagline.frame)
+        let reservedUp = NSRect(x: logoUp.minX, y: logoUp.minY - 44,
+                                width: logoUp.width, height: logoUp.height + 44)
+        let hgt = container.bounds.height
+        background.logoSafeZone = NSRect(x: reservedUp.minX, y: hgt - reservedUp.maxY,
+                                         width: reservedUp.width, height: reservedUp.height)
+
         container.subviews.forEach { $0.removeFromSuperview() }
-        [titleLabel, bodyLabel, signInButton, errorLabel, spinner].forEach { container.addSubview($0) }
+        container.addSubview(background)
+        [wordmark, tagline, bodyLabel, errorLabel, appleButton, spinner, footerLabel]
+            .forEach { container.addSubview($0) }
     }
 
     @objc private func tapSignIn() {
         errorLabel.stringValue = ""
-        signInButton.isEnabled = false
+        appleButton.isEnabled = false
         spinner.startAnimation(nil)
         flowDelegate?.onboardingDidTapSignIn(self)
     }
@@ -187,18 +331,22 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     /// Called by the delegate when sign-in fails — stay on the welcome screen.
     func showSignInError(_ msg: String) {
         spinner.stopAnimation(nil)
-        signInButton.isEnabled = true
+        appleButton.isEnabled = true
         errorLabel.stringValue = msg
     }
 
     /// Called by the delegate on success — swap to the pairing QR screen.
     func showPairing() {
-        window?.title = "配對這台桌機"
         container.subviews.forEach { $0.removeFromSuperview() }
+        background.frame = container.bounds
+        background.logoSafeZone = nil                    // 配對頁無 logo → 完整雲背景（非特規）
+        container.addSubview(background)                 // 奶油底延續到配對頁
         let heading = NSTextField(labelWithString: "登入成功 · 用手機掃描配對")
         heading.frame = NSRect(x: 30, y: 430, width: 360, height: 24)
         heading.font = .systemFont(ofSize: 16, weight: .semibold)
+        heading.textColor = PocketPalette.ink
         heading.alignment = .center
+        heading.drawsBackground = false
         container.addSubview(heading)
         pairingView.frame = NSRect(x: 0, y: -40, width: 420, height: 480)
         container.addSubview(pairingView)

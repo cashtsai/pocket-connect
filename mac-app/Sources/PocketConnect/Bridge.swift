@@ -102,6 +102,72 @@ final class BridgeClient {
         }
     }
 
+    // MARK: - Paired-device management (bridge token only, no account session)
+
+    struct PairedDevice: Identifiable {
+        let id: String            // short-hash token id (used for revoke)
+        let name: String
+        let platform: String?
+        let accountBound: Bool
+        let lastSeen: Date?
+    }
+
+    /// GET /pair/devices — list the phones paired to this Mac's bridge.
+    func listDevices(completion: @escaping (Result<[PairedDevice], Error>) -> Void) {
+        func done(_ r: Result<[PairedDevice], Error>) { DispatchQueue.main.async { completion(r) } }
+        guard let token = BridgeToken.read() else {
+            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+        }
+        guard let url = URL(string: baseURL + "/pair/devices") else {
+            return done(.failure(BridgeError(message: "無效的網址")))
+        }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("PocketConnect/1.0", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err { return done(.failure(err)) }
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let detail = (json?["detail"] as? String) ?? "HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)"
+                return done(.failure(BridgeError(message: detail)))
+            }
+            let arr = (json?["devices"] as? [[String: Any]]) ?? []
+            let devices = arr.compactMap { d -> PairedDevice? in
+                guard let id = d["id"] as? String, !id.isEmpty else { return nil }
+                return PairedDevice(
+                    id: id, name: (d["name"] as? String) ?? "device",
+                    platform: d["platform"] as? String,
+                    accountBound: (d["account_bound"] as? Bool) ?? false,
+                    lastSeen: (d["last_seen"] as? Double).map { Date(timeIntervalSince1970: $0) })
+            }
+            done(.success(devices))
+        }.resume()
+    }
+
+    /// POST /pair/revoke — unpair a device by id. Returns how many were removed.
+    func revoke(id: String, completion: @escaping (Result<Int, Error>) -> Void) {
+        func done(_ r: Result<Int, Error>) { DispatchQueue.main.async { completion(r) } }
+        guard let token = BridgeToken.read() else {
+            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+        }
+        guard let url = URL(string: baseURL + "/pair/revoke") else {
+            return done(.failure(BridgeError(message: "無效的網址")))
+        }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["id": id])
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err { return done(.failure(err)) }
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return done(.failure(BridgeError(message: (json?["detail"] as? String) ?? "撤銷失敗")))
+            }
+            done(.success((json?["revoked"] as? Int) ?? 0))
+        }.resume()
+    }
+
     // MARK: - Low-level POST returning a JSON object, hopping back to main thread.
     private func post(path: String, body: [String: Any], headers: [String: String],
                       completion: @escaping (Result<[String: Any], Error>) -> Void) {
