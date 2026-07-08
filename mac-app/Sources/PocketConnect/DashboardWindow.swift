@@ -167,6 +167,10 @@ final class DashboardViewModel: ObservableObject {
         // 免費模式（自動臨時 tunnel）網址會變，靠 CloudKit 同步給手機 → 必須開 iCloud。
         // 有自訂固定網址（進階）就不需要（網址不變）。
         if appDelegate.customConnectURL == nil {
+            if let reason = CloudGate.staticDisableReason() {
+                pairingStatus = "免費模式需要 iCloud 同步，但目前\(reason)。\n請到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。"
+                return
+            }
             CKContainer.default().accountStatus { [weak self] status, _ in
                 DispatchQueue.main.async {
                     guard let self else { return }

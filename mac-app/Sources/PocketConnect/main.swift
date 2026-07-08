@@ -95,15 +95,29 @@ final class Supervisor {
     // Same probe, also timing the round trip — dashboard §5 M2c 驗收 ① wants
     // "bridge 存活/延遲" at a glance. latencyMs is nil when unreachable.
     func probeLatency(_ url: String, _ done: @escaping (Bool, Double?) -> Void) {
-        guard let u = URL(string: url) else { return done(false, nil) }
+        guard let u = Self.healthURL(for: url) else { return done(false, nil) }
         var r = URLRequest(url: u, timeoutInterval: 6)
         r.setValue("PocketConnect/1.0", forHTTPHeaderField: "User-Agent")
         let start = DispatchTime.now()
         URLSession.shared.dataTask(with: r) { _, resp, _ in
             let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
-            let ok = (resp as? HTTPURLResponse) != nil
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let ok = (200..<300).contains(status)
             DispatchQueue.main.async { done(ok, ok ? elapsedMs : nil) }
         }.resume()
+    }
+
+    private static func healthURL(for baseURL: String) -> URL? {
+        guard var components = URLComponents(string: baseURL) else { return nil }
+        let trimmedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if trimmedPath.isEmpty {
+            components.path = "/health"
+        } else if trimmedPath != "health" {
+            components.path = components.path.hasSuffix("/") ? components.path + "health" : components.path + "/health"
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.url
     }
 }
 
@@ -119,7 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     }
     var autoTunnelURL: String?
     var effectiveConnectURL: String { customConnectURL ?? autoTunnelURL ?? cfg.connectURL }
-    lazy var bridge = BridgeClient(baseURL: effectiveConnectURL)
+    var localBridgeURL: String { "http://127.0.0.1:\(cfg.bridgePort)" }
+    lazy var bridge = BridgeClient(baseURL: localBridgeURL, pairingBaseURL: effectiveConnectURL)
     lazy var tunnelManager = TunnelManager(localPort: cfg.bridgePort,
                                            cloudflaredPath: TunnelManager.resolveCloudflaredPath())
     var statusItem: NSStatusItem!
@@ -265,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     /// 連線網址變了（拿到臨時 tunnel、或使用者改自訂網址）→ 重建 client、更新畫面。
     func onConnectURLChanged() {
-        bridge = BridgeClient(baseURL: effectiveConnectURL)
+        bridge = BridgeClient(baseURL: localBridgeURL, pairingBaseURL: effectiveConnectURL)
         rebuildMenu()
         dashboardModel?.refresh()
         poll()

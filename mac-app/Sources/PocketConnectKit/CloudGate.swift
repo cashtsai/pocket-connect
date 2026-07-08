@@ -18,15 +18,26 @@ public enum CloudGate {
 
     /// iCloud container IDs embedded in our code signature, if any.
     public static func entitledContainers() -> [String] {
+        entitlementArray("com.apple.developer.icloud-container-identifiers")
+    }
+
+    private static func entitlementArray(_ key: String) -> [String] {
         guard let task = SecTaskCreateFromSelf(nil) else { return [] }
-        guard let value = SecTaskCopyValueForEntitlement(
-            task, "com.apple.developer.icloud-container-identifiers" as CFString, nil)
+        guard let value = SecTaskCopyValueForEntitlement(task, key as CFString, nil)
         else { return [] }
         return (value as? [String]) ?? []
     }
 
+    private static func entitlementString(_ key: String) -> String? {
+        guard let task = SecTaskCreateFromSelf(nil) else { return nil }
+        return SecTaskCopyValueForEntitlement(task, key as CFString, nil) as? String
+    }
+
     public static var hasEntitlement: Bool {
-        entitledContainers().contains(CloudSchema.containerID)
+        entitledContainers().contains(CloudSchema.containerID) &&
+        entitlementArray("com.apple.developer.icloud-services").contains("CloudKit") &&
+        entitlementString("com.apple.application-identifier")?.isEmpty == false &&
+        entitlementString("com.apple.developer.team-identifier")?.isEmpty == false
     }
 
     public static var killSwitchOn: Bool {

@@ -56,6 +56,11 @@ done
 #     Macs. Also embed the matching provisioning profile so the restricted
 #     applesignin entitlement is authorized.
 # Base entitlements (ad-hoc builds sign with just this — Sign in with Apple).
+REQUESTED_SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+REQUESTED_PROFILE="${PROFILE:-}"
+SCRIPT_OUT="$OUT"
+SCRIPT_APPDIR="$APPDIR"
+SCRIPT_VER="$VER"
 ENTITLEMENTS="packaging/PocketConnect.entitlements"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
 
@@ -74,6 +79,11 @@ SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
 #   TEAM_ID="4F8B93R3SH"
 NOTARIZE="${NOTARIZE:-0}"
 [[ -f "$HOME/.pocket-release.env" ]] && source "$HOME/.pocket-release.env"
+OUT="$SCRIPT_OUT"
+APPDIR="$SCRIPT_APPDIR"
+VER="$SCRIPT_VER"
+[[ -n "$REQUESTED_SIGN_IDENTITY" ]] && SIGN_IDENTITY="$REQUESTED_SIGN_IDENTITY"
+[[ -n "$REQUESTED_PROFILE" ]] && PROFILE="$REQUESTED_PROFILE"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # re-resolve in case the env file set it
 TEAM_ID="${TEAM_ID:-4F8B93R3SH}"
 
@@ -121,8 +131,14 @@ fi
 
 # Hardened runtime is REQUIRED for notarization; only add it on the Developer ID
 # path (it conflicts with the Development build's get-task-allow entitlement).
-CODESIGN_OPTS=(--force --deep)
+CODESIGN_OPTS=(--force)
 [[ "$NOTARIZE" == "1" ]] && CODESIGN_OPTS+=(--options runtime --timestamp)
+
+if [[ -x "$APPDIR/Contents/Resources/cloudflared" ]]; then
+  echo "▸ codesign helper cloudflared"
+  codesign --force --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared" \
+    || echo "  (helper codesign failed — continuing; app may still run if helper is already signed)"
+fi
 
 echo "▸ codesign (identity: $SIGN_IDENTITY${NOTARIZE:+, hardened runtime})"
 codesign "${CODESIGN_OPTS[@]}" \
@@ -165,5 +181,6 @@ fi
 echo "✓ done:"
 echo "  app: $APPDIR"
 echo "  dmg: $DMG"
-[[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" == "-" ]] && \
+if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" == "-" ]]; then
   echo "  ⚠ ad-hoc 簽章 — 別台 Mac 會被 Gatekeeper 擋，需右鍵→打開（見 docs/INSTALL_FAQ.md）。"
+fi

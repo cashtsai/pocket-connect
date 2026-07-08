@@ -62,13 +62,22 @@ struct PairCode {
 }
 
 final class BridgeClient {
-    let baseURL: String   // e.g. https://pocket.tsai.cash
-    init(baseURL: String) { self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL }
+    let baseURL: String          // desktop API base, usually http://127.0.0.1:8081
+    let pairingBaseURL: String   // phone-facing URL used in the QR payload
 
-    /// Host portion of baseURL (for the QR payload's host= param).
-    var host: String { URL(string: baseURL)?.host ?? baseURL }
-    /// Scheme portion of baseURL (for the QR payload's scheme= param).
-    var scheme: String { URL(string: baseURL)?.scheme ?? "https" }
+    init(baseURL: String, pairingBaseURL: String? = nil) {
+        self.baseURL = Self.normalized(baseURL)
+        self.pairingBaseURL = Self.normalized(pairingBaseURL ?? baseURL)
+    }
+
+    private static func normalized(_ raw: String) -> String {
+        raw.hasSuffix("/") ? String(raw.dropLast()) : raw
+    }
+
+    /// Host portion of the phone-facing URL (for the QR payload's host= param).
+    var host: String { URL(string: pairingBaseURL)?.host ?? pairingBaseURL }
+    /// Scheme portion of the phone-facing URL (for the QR payload's scheme= param).
+    var scheme: String { URL(string: pairingBaseURL)?.scheme ?? "https" }
 
     // POST /app/v1/auth/apple — authenticated by the Apple JWT itself.
     func authApple(appleUserID: String, identityToken: String, displayName: String?, email: String?,
