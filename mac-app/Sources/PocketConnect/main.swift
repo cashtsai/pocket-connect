@@ -323,11 +323,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         presentOnboarding()
     }
 
+    private var installer: HermesInstaller?
+
     private func presentOnboarding() {
         let controller = onboarding ?? OnboardingWindowController()
         controller.flowDelegate = self
         onboarding = controller
+        controller.onEnvironmentInstall = { [weak self] in self?.runHermesInstall() }
+        controller.onEnvironmentRecheck = { [weak self] in self?.gateOnboardingEnvironment() }
+        // M3 spec §1/§2:登入前先做環境檢查;present 前先切到檢查畫面,
+        // 避免 welcome 頁閃一下。
+        gateOnboardingEnvironment()
         controller.present()
+    }
+
+    /// 環境檢查 → ready 直接進登入頁（已就緒的使用者不被多問,spec §5）,
+    /// 缺 Hermes/bridge 則停在引導安裝畫面。
+    private func gateOnboardingEnvironment() {
+        guard let controller = onboarding else { return }
+        controller.showEnvironmentBusy("正在檢查執行環境…")
+        EnvironmentCheck.run(bridgePort: cfg.bridgePort) { [weak controller] status in
+            guard let controller else { return }
+            NSLog("[env-check] status=%@, screen=%@", String(describing: status),
+                  status == .ready ? "welcome(login)" : "environment-gate")
+            status == .ready ? controller.showWelcome() : controller.showEnvironmentGate(status)
+        }
+    }
+
+    /// 「一鍵安裝 Hermes」→ 背景跑 install_hermes.sh;裝完自動重新檢查,
+    /// 通過就自動進登入頁,失敗顯示錯誤 + 記錄檔入口（spec §2）。
+    private func runHermesInstall() {
+        guard let controller = onboarding, installer == nil else { return }
+        controller.showEnvironmentBusy("安裝中…（第一次安裝可能需要幾分鐘）")
+        let inst = HermesInstaller()
+        installer = inst
+        inst.run { [weak self] ok, detail in
+            guard let self else { return }
+            self.installer = nil
+            guard let controller = self.onboarding else { return }   // 視窗已被關掉
+            EnvironmentCheck.run(bridgePort: self.cfg.bridgePort) { [weak controller] status in
+                guard let controller else { return }
+                if status == .ready {
+                    controller.showWelcome()
+                } else {
+                    controller.showEnvironmentGate(status, error: ok
+                        ? "安裝腳本跑完了,但環境檢查仍未通過。"
+                        : detail)
+                }
+            }
+        }
     }
 
     // OnboardingDelegate — the delegate owns the actual auth + pairing calls.

@@ -39,6 +39,8 @@ cp packaging/MenuBarIconOff.png "$APPDIR/Contents/Resources/"
 # login uses. See docs/BRAND_CLOUD_BACKGROUND.md + brand CIS.
 cp packaging/pocket-wordmark.png "$APPDIR/Contents/Resources/"
 cp packaging/LuckiestGuy-Regular.ttf "$APPDIR/Contents/Resources/"
+# M3 環境引導:「一鍵安裝 Hermes」按鈕在背景跑的安裝腳本(spec §3)。
+cp packaging/install_hermes.sh "$APPDIR/Contents/Resources/"
 cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null || true
 
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
