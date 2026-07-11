@@ -168,7 +168,15 @@ final class DashboardViewModel: ObservableObject {
         // 有自訂固定網址（進階）就不需要（網址不變）。
         if appDelegate.customConnectURL == nil {
             if let reason = CloudGate.staticDisableReason() {
-                pairingStatus = "免費模式需要 iCloud 同步，但目前\(reason)。\n請到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。"
+                if appDelegate.autoTunnelURL != nil {
+                    // A signed CloudKit build can keep the phone updated after
+                    // a tunnel URL churn. For the first QR, the payload already
+                    // carries the current tunnel host, so local/dev builds may
+                    // still mint a usable pairing QR.
+                    mintPairingCode()
+                } else {
+                    waitForTunnelThenMint(cloudGateReason: reason)
+                }
                 return
             }
             CKContainer.default().accountStatus { [weak self] status, _ in
@@ -183,6 +191,28 @@ final class DashboardViewModel: ObservableObject {
             }
         } else {
             mintPairingCode()
+        }
+    }
+
+    private func waitForTunnelThenMint(cloudGateReason reason: String, attempt: Int = 0) {
+        guard let appDelegate else { return }
+        if let url = appDelegate.autoTunnelURL ?? appDelegate.tunnelManager.currentURL {
+            appDelegate.autoTunnelURL = url
+            appDelegate.onConnectURLChanged()
+            mintPairingCode()
+            return
+        }
+
+        appDelegate.tunnelManager.start()
+        pairingStatus = "正在等待臨時連線網址…"
+        guard attempt < 20 else {
+            pairingStatus = "等不到臨時連線網址。\n請稍後再按一次，或到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。（目前\(reason)）"
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self, self.pairingVisible, self.qrImage == nil else { return }
+            self.waitForTunnelThenMint(cloudGateReason: reason, attempt: attempt + 1)
         }
     }
 

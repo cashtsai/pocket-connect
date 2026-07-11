@@ -200,7 +200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     }
 
     func poll() {
-        supervisor.probe(effectiveConnectURL) { [weak self] ok in
+        // The desktop app's own control path is the local bridge. The public
+        // tunnel can churn or fail DNS while local Hermes remains healthy, so
+        // do not use it for the menu-bar connection light.
+        supervisor.probe(localBridgeURL) { [weak self] ok in
             guard let self else { return }
             self.reachable = ok
             // v005 狀態列雙態:連線/離線各自的 template 圖(系統自動配

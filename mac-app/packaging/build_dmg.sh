@@ -83,7 +83,13 @@ OUT="$SCRIPT_OUT"
 APPDIR="$SCRIPT_APPDIR"
 VER="$SCRIPT_VER"
 [[ -n "$REQUESTED_SIGN_IDENTITY" ]] && SIGN_IDENTITY="$REQUESTED_SIGN_IDENTITY"
-[[ -n "$REQUESTED_PROFILE" ]] && PROFILE="$REQUESTED_PROFILE"
+# ~/.pocket-release.env is a SHARED file across projects (also used by the
+# pocketagent iOS release lane, which sets its own PROFILE="Pocket iOS
+# AppStore" for a completely different app). If this script's caller didn't
+# explicitly pass PROFILE, don't let a same-named var leaked in from sourcing
+# that shared file silently hijack the desktop app's provisioning profile —
+# reset to empty so the desktop-specific default below (line ~93) applies.
+PROFILE="$REQUESTED_PROFILE"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # re-resolve in case the env file set it
 TEAM_ID="${TEAM_ID:-4F8B93R3SH}"
 
@@ -91,7 +97,7 @@ TEAM_ID="${TEAM_ID:-4F8B93R3SH}"
 # .provisionprofile, or leave the default to auto-pick the installed
 # "Pocket Agent Desktop Mac Dev" profile by its known UUID.
 PROFILE="${PROFILE:-$HOME/Library/MobileDevice/Provisioning Profiles/bcd619b6-c187-49d5-8e53-085e02a79f79.provisionprofile}"
-SIGN_ENTITLEMENTS="$ENTITLEMENTS"
+SIGN_ENTITLEMENTS=""
 # Development builds embed a provisioning profile + derive get-task-allow entitlements.
 # The Developer ID / notarization path (NOTARIZE=1) must NOT: notarized apps ship with
 # a hardened runtime and no get-task-allow, and Developer ID needs no embedded profile.
@@ -123,28 +129,47 @@ if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
     /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.icloud-container-environment' "$DERIVED"
     /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-container-environment string Development' "$DERIVED"
   fi
+  # Profiles may grant wildcard groups, but the app signature must carry
+  # concrete values. Leaving `4F8B93R3SH.*` in the signed entitlements makes
+  # macOS report "invalid entitlements blob" and ignore them, which breaks the
+  # Keychain access-group lookup used by Keychain.swift.
+  if /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups' "$DERIVED" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c 'Delete :keychain-access-groups' "$DERIVED"
+  fi
+  /usr/libexec/PlistBuddy -c 'Add :keychain-access-groups array' "$DERIVED"
+  /usr/libexec/PlistBuddy -c "Add :keychain-access-groups:0 string ${TEAM_ID}.com.pocketagent.desktop" "$DERIVED"
+  if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.ubiquity-kvstore-identifier' "$DERIVED" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :com.apple.developer.ubiquity-kvstore-identifier ${TEAM_ID}.com.pocketagent.desktop" "$DERIVED"
+  fi
   SIGN_ENTITLEMENTS="$DERIVED"
   echo "  entitlements: derived from profile (+ get-task-allow, CloudKit-coerced)"
 elif [[ "$SIGN_IDENTITY" != "-" ]]; then
   echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
+  SIGN_ENTITLEMENTS="$ENTITLEMENTS"
 fi
 
 # Hardened runtime is REQUIRED for notarization; only add it on the Developer ID
 # path (it conflicts with the Development build's get-task-allow entitlement).
-CODESIGN_OPTS=(--force)
+CODESIGN_OPTS=(--force --generate-entitlement-der)
 [[ "$NOTARIZE" == "1" ]] && CODESIGN_OPTS+=(--options runtime --timestamp)
 
 if [[ -x "$APPDIR/Contents/Resources/cloudflared" ]]; then
   echo "▸ codesign helper cloudflared"
-  codesign --force --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared" \
+  codesign --force --generate-entitlement-der --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared" \
     || echo "  (helper codesign failed — continuing; app may still run if helper is already signed)"
 fi
 
 echo "▸ codesign (identity: $SIGN_IDENTITY${NOTARIZE:+, hardened runtime})"
-codesign "${CODESIGN_OPTS[@]}" \
-  --entitlements "$SIGN_ENTITLEMENTS" \
-  --sign "$SIGN_IDENTITY" "$APPDIR" \
-  || echo "  (codesign failed — ad-hoc build may still run locally)"
+if [[ -n "$SIGN_ENTITLEMENTS" ]]; then
+  codesign "${CODESIGN_OPTS[@]}" \
+    --entitlements "$SIGN_ENTITLEMENTS" \
+    --sign "$SIGN_IDENTITY" "$APPDIR" \
+    || echo "  (codesign failed — app may not pass verification)"
+else
+  codesign "${CODESIGN_OPTS[@]}" \
+    --sign "$SIGN_IDENTITY" "$APPDIR" \
+    || echo "  (codesign failed — app may not pass verification)"
+fi
 
 echo "▸ create .dmg"
 DMG="$OUT/Pocket-$VER.dmg"
