@@ -73,10 +73,15 @@ SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
 # Then:  cp packaging/pocket-release.env.example ~/.pocket-release.env  and fill it
 #        NOTARIZE=1 ./packaging/build_dmg.sh
 #
-# ~/.pocket-release.env (never committed) supplies:
+# ~/.pocket-release.env (never committed) supplies EITHER of two auth paths
+# for notarytool (API key preferred — reuses the same ASC key asc.py already
+# uses for TestFlight uploads, no extra Apple-ID app-specific-password needed):
 #   SIGN_IDENTITY="Developer ID Application: <name> (4F8B93R3SH)"
-#   APPLE_ID="you@apple.id"          APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 #   TEAM_ID="4F8B93R3SH"
+#   # Path A (preferred): App Store Connect API key
+#   ASC_KEY_ID="..."  ASC_ISSUER_ID="..."  ASC_KEY_PATH="~/.appstoreconnect/private_keys/AuthKey_....p8"
+#   # Path B (fallback): Apple ID + app-specific password
+#   APPLE_ID="you@apple.id"          APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 NOTARIZE="${NOTARIZE:-0}"
 [[ -f "$HOME/.pocket-release.env" ]] && source "$HOME/.pocket-release.env"
 OUT="$SCRIPT_OUT"
@@ -155,7 +160,10 @@ CODESIGN_OPTS=(--force --generate-entitlement-der)
 
 if [[ -x "$APPDIR/Contents/Resources/cloudflared" ]]; then
   echo "▸ codesign helper cloudflared"
-  codesign --force --generate-entitlement-der --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared" \
+  # Must use the same CODESIGN_OPTS as the main app (incl. --options runtime on
+  # the notarize path) — notarytool rejects the whole archive if ANY embedded
+  # executable lacks the hardened runtime, even if the app itself has it.
+  codesign "${CODESIGN_OPTS[@]}" --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared" \
     || echo "  (helper codesign failed — continuing; app may still run if helper is already signed)"
 fi
 
@@ -185,18 +193,33 @@ rm -rf "$STAGE"
 if [[ "$NOTARIZE" == "1" ]]; then
   if [[ "$SIGN_IDENTITY" == "-" ]]; then
     echo "✗ NOTARIZE=1 但 SIGN_IDENTITY 還是 ad-hoc(-)。要用 Developer ID Application 憑證。" >&2
-    echo "  在 ~/.pocket-release.env 設 SIGN_IDENTITY / APPLE_ID / APP_SPECIFIC_PASSWORD。" >&2
+    echo "  在 ~/.pocket-release.env 設 SIGN_IDENTITY，並提供 ASC_KEY_ID/ASC_ISSUER_ID/ASC_KEY_PATH" >&2
+    echo "  （或 APPLE_ID/APP_SPECIFIC_PASSWORD 作為備援）。" >&2
     exit 1
   fi
-  if [[ -z "${APPLE_ID:-}" || -z "${APP_SPECIFIC_PASSWORD:-}" ]]; then
-    echo "✗ 缺 APPLE_ID / APP_SPECIFIC_PASSWORD（放 ~/.pocket-release.env）。" >&2
-    echo "  App 專用密碼在 https://account.apple.com → 登入與安全 → App 專用密碼 產生。" >&2
+  # Path A (preferred): App Store Connect API key — same key asc.py already
+  # uses for TestFlight uploads, no separate Apple-ID app-specific password.
+  # Path B (fallback): Apple ID + app-specific password.
+  NOTARY_AUTH=()
+  if [[ -n "${ASC_KEY_ID:-}" && -n "${ASC_ISSUER_ID:-}" && -n "${ASC_KEY_PATH:-}" ]]; then
+    KEY_PATH_EXPANDED="${ASC_KEY_PATH/#\~/$HOME}"
+    if [[ ! -f "$KEY_PATH_EXPANDED" ]]; then
+      echo "✗ ASC_KEY_PATH 指的檔案不存在：$KEY_PATH_EXPANDED" >&2
+      exit 1
+    fi
+    echo "▸ notarytool 認證方式：App Store Connect API key ($ASC_KEY_ID)"
+    NOTARY_AUTH=(--key "$KEY_PATH_EXPANDED" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
+  elif [[ -n "${APPLE_ID:-}" && -n "${APP_SPECIFIC_PASSWORD:-}" ]]; then
+    echo "▸ notarytool 認證方式：Apple ID + App 專用密碼"
+    NOTARY_AUTH=(--apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD")
+  else
+    echo "✗ 缺公證認證資訊（放 ~/.pocket-release.env）。二選一：" >&2
+    echo "  A) ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_PATH（建議，沿用既有 ASC API key）" >&2
+    echo "  B) APPLE_ID / APP_SPECIFIC_PASSWORD（https://account.apple.com → 登入與安全 → App 專用密碼）" >&2
     exit 1
   fi
   echo "▸ notarytool submit（送 Apple 公證，通常幾分鐘）"
-  xcrun notarytool submit "$DMG" \
-    --apple-id "$APPLE_ID" --team-id "$TEAM_ID" \
-    --password "$APP_SPECIFIC_PASSWORD" --wait
+  xcrun notarytool submit "$DMG" "${NOTARY_AUTH[@]}" --wait
   echo "▸ stapler staple"
   xcrun stapler staple "$DMG"
   echo "▸ 驗收：spctl 應回 accepted / source=Notarized Developer ID"
