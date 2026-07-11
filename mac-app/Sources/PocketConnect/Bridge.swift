@@ -11,10 +11,21 @@ import Foundation
 enum BridgeToken {
     // LaunchAgent plist that carries BRIDGE_TOKEN in its EnvironmentVariables.
     private static let plistPath = NSString(string: "~/Library/LaunchAgents/ai.studio.hermes-bridge.plist").expandingTildeInPath
+    // 使用者在「連線設定」手動貼的金鑰（自動讀不到時用）。
+    private static let overrideKey = "pocketBridgeTokenOverride"
 
-    /// Resolve the bridge master token: env var first, then the LaunchAgent plist.
+    /// 讓使用者手動設/清金鑰（連線設定的貼上欄位）。
+    static func setOverride(_ token: String?) {
+        let t = token?.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set((t?.isEmpty ?? true) ? nil : t, forKey: overrideKey)
+    }
+
+    /// Resolve the bridge master token: 手動覆寫 → env var → LaunchAgent plist。
     /// Returns nil if missing or an unconfigured placeholder.
     static func read() -> String? {
+        if let manual = UserDefaults.standard.string(forKey: overrideKey), let s = sanitize(manual) {
+            return s
+        }
         if let env = ProcessInfo.processInfo.environment["BRIDGE_TOKEN"], !env.isEmpty {
             return sanitize(env)
         }
@@ -51,13 +62,22 @@ struct PairCode {
 }
 
 final class BridgeClient {
-    let baseURL: String   // e.g. https://pocket.tsai.cash
-    init(baseURL: String) { self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL }
+    let baseURL: String          // desktop API base, usually http://127.0.0.1:8081
+    let pairingBaseURL: String   // phone-facing URL used in the QR payload
 
-    /// Host portion of baseURL (for the QR payload's host= param).
-    var host: String { URL(string: baseURL)?.host ?? baseURL }
-    /// Scheme portion of baseURL (for the QR payload's scheme= param).
-    var scheme: String { URL(string: baseURL)?.scheme ?? "https" }
+    init(baseURL: String, pairingBaseURL: String? = nil) {
+        self.baseURL = Self.normalized(baseURL)
+        self.pairingBaseURL = Self.normalized(pairingBaseURL ?? baseURL)
+    }
+
+    private static func normalized(_ raw: String) -> String {
+        raw.hasSuffix("/") ? String(raw.dropLast()) : raw
+    }
+
+    /// Host portion of the phone-facing URL (for the QR payload's host= param).
+    var host: String { URL(string: pairingBaseURL)?.host ?? pairingBaseURL }
+    /// Scheme portion of the phone-facing URL (for the QR payload's scheme= param).
+    var scheme: String { URL(string: pairingBaseURL)?.scheme ?? "https" }
 
     // POST /app/v1/auth/apple — authenticated by the Apple JWT itself.
     func authApple(appleUserID: String, identityToken: String, displayName: String?, email: String?,

@@ -98,7 +98,7 @@ extension AppDelegate {
             deviceID: Self.stableDeviceID(),
             name: Host.current().localizedName ?? "Mac",
             hostCandidates: HostCandidates.gather(bridgePort: cfg.bridgePort,
-                                                  tunnelURL: cfg.connectURL),
+                                                  tunnelURL: effectiveConnectURL),
             bridgeFingerprint: Self.stableBridgeFingerprint(),
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString)

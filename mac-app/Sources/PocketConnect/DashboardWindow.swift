@@ -1,4 +1,5 @@
 import AppKit
+import CloudKit
 import PocketConnectKit
 import SwiftUI
 
@@ -66,6 +67,13 @@ final class DashboardViewModel: ObservableObject {
     @Published var bridgeLatencyMs: Double?
     @Published var connectHost = ""
     @Published var cloudStatusText = "—"
+    // 連線設定（進階）
+    @Published var customURLField = ""
+    @Published var usingCustomURL = false
+    @Published var tokenDetected = false
+    @Published var isTesting = false
+    @Published var testResult: String?
+    @Published var tokenField = ""
     @Published var devices: [BridgeClient.PairedDevice] = []
     @Published var isLoadingDevices = false
     @Published var devicesError: String?
@@ -82,13 +90,18 @@ final class DashboardViewModel: ObservableObject {
     private var pairPollTimer: Timer?
     private var pairKnownIDs: Set<String> = []
 
-    init(appDelegate: AppDelegate) { self.appDelegate = appDelegate }
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
+        self.customURLField = appDelegate.customConnectURL ?? ""   // 一次性載入，別在 refresh 蓋掉使用者打字
+    }
 
     func refresh() {
         guard let appDelegate else { return }
         cloudStatusText = appDelegate.cloudStatusText
-        connectHost = URL(string: appDelegate.cfg.connectURL)?.host ?? appDelegate.cfg.connectURL
-        appDelegate.supervisor.probeLatency(appDelegate.cfg.connectURL) { [weak self] ok, ms in
+        connectHost = URL(string: appDelegate.effectiveConnectURL)?.host ?? appDelegate.effectiveConnectURL
+        usingCustomURL = appDelegate.customConnectURL != nil
+        tokenDetected = BridgeToken.read() != nil
+        appDelegate.supervisor.probeLatency(appDelegate.effectiveConnectURL) { [weak self] ok, ms in
             self?.bridgeReachable = ok
             self?.bridgeLatencyMs = ms
         }
@@ -118,6 +131,30 @@ final class DashboardViewModel: ObservableObject {
     /// 登出並重新設定（清除登入 + 重跑首次設定）。
     func resetOnboarding() { appDelegate?.resetOnboarding() }
 
+    // MARK: 連線設定（進階）
+
+    func testConnection() {
+        guard let appDelegate else { return }
+        let target = customURLField.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = target.isEmpty ? appDelegate.effectiveConnectURL : target
+        isTesting = true
+        testResult = nil
+        appDelegate.supervisor.probeLatency(url) { [weak self] ok, ms in
+            self?.isTesting = false
+            self?.testResult = ok ? String(format: "● 連得到 · %.0fms", ms ?? 0) : "✗ 連不到，檢查網址"
+        }
+    }
+
+    func saveConnection() {
+        appDelegate?.setCustomConnectURL(customURLField)
+        if !tokenField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            BridgeToken.setOverride(tokenField)
+            tokenField = ""
+        }
+        testResult = "已儲存"
+        refresh()
+    }
+
     // MARK: 內嵌配對
 
     func startPairing() {
@@ -126,6 +163,61 @@ final class DashboardViewModel: ObservableObject {
         pairingExpired = false
         qrImage = nil
         guard Keychain.loadSessionToken() != nil else { pairingStatus = "請先登入"; return }
+        pairingStatus = "檢查中…"
+        // 免費模式（自動臨時 tunnel）網址會變，靠 CloudKit 同步給手機 → 必須開 iCloud。
+        // 有自訂固定網址（進階）就不需要（網址不變）。
+        if appDelegate.customConnectURL == nil {
+            if let reason = CloudGate.staticDisableReason() {
+                if appDelegate.autoTunnelURL != nil {
+                    // A signed CloudKit build can keep the phone updated after
+                    // a tunnel URL churn. For the first QR, the payload already
+                    // carries the current tunnel host, so local/dev builds may
+                    // still mint a usable pairing QR.
+                    mintPairingCode()
+                } else {
+                    waitForTunnelThenMint(cloudGateReason: reason)
+                }
+                return
+            }
+            CKContainer.default().accountStatus { [weak self] status, _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if status == .available {
+                        self.mintPairingCode()
+                    } else {
+                        self.pairingStatus = "免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。"
+                    }
+                }
+            }
+        } else {
+            mintPairingCode()
+        }
+    }
+
+    private func waitForTunnelThenMint(cloudGateReason reason: String, attempt: Int = 0) {
+        guard let appDelegate else { return }
+        if let url = appDelegate.autoTunnelURL ?? appDelegate.tunnelManager.currentURL {
+            appDelegate.autoTunnelURL = url
+            appDelegate.onConnectURLChanged()
+            mintPairingCode()
+            return
+        }
+
+        appDelegate.tunnelManager.start()
+        pairingStatus = "正在等待臨時連線網址…"
+        guard attempt < 20 else {
+            pairingStatus = "等不到臨時連線網址。\n請稍後再按一次，或到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。（目前\(reason)）"
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self, self.pairingVisible, self.qrImage == nil else { return }
+            self.waitForTunnelThenMint(cloudGateReason: reason, attempt: attempt + 1)
+        }
+    }
+
+    private func mintPairingCode() {
+        guard let appDelegate else { return }
         pairingStatus = "產生配對碼中…"
         pairKnownIDs = Set(devices.map(\.id))
         let coord = PairingCoordinator(client: appDelegate.bridge,
@@ -189,6 +281,7 @@ struct DashboardView: View {
                     wordmarkHeader
                     card { pairingSection }
                     card { connectionSection }
+                    card { connectionSettingsSection }
                     card { devicesSection }
                 }
                 .padding(.horizontal, 20)
@@ -275,6 +368,37 @@ struct DashboardView: View {
             }
             if !model.connectHost.isEmpty {
                 Text(model.connectHost).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: 連線設定（進階）
+
+    private var connectionSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("連線設定")
+            Text("你的 Pocket 網址（留空 = 用免費自動連線）")
+                .font(.caption).foregroundStyle(.secondary)
+            TextField("https://your-bridge.example.com", text: $model.customURLField)
+                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 6) {
+                Circle().fill(model.tokenDetected ? Brand.green : Brand.red).frame(width: 7, height: 7)
+                Text(model.tokenDetected ? "金鑰已自動讀到（來自 Hermes 設定）" : "找不到金鑰 — 手動貼上或檢查 Hermes 設定")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if !model.tokenDetected {
+                SecureField("貼上 BRIDGE_TOKEN", text: $model.tokenField)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack(spacing: 8) {
+                Button("測試連線") { model.testConnection() }
+                    .buttonStyle(.bordered).controlSize(.small).disabled(model.isTesting)
+                Button("儲存") { model.saveConnection() }
+                    .buttonStyle(.borderedProminent).tint(Brand.red).controlSize(.small)
+                if model.isTesting { ProgressView().controlSize(.small) }
+                if let r = model.testResult {
+                    Text(r).font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
     }

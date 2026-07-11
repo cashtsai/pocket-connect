@@ -95,15 +95,29 @@ final class Supervisor {
     // Same probe, also timing the round trip — dashboard §5 M2c 驗收 ① wants
     // "bridge 存活/延遲" at a glance. latencyMs is nil when unreachable.
     func probeLatency(_ url: String, _ done: @escaping (Bool, Double?) -> Void) {
-        guard let u = URL(string: url) else { return done(false, nil) }
+        guard let u = Self.healthURL(for: url) else { return done(false, nil) }
         var r = URLRequest(url: u, timeoutInterval: 6)
         r.setValue("PocketConnect/1.0", forHTTPHeaderField: "User-Agent")
         let start = DispatchTime.now()
         URLSession.shared.dataTask(with: r) { _, resp, _ in
             let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
-            let ok = (resp as? HTTPURLResponse) != nil
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let ok = (200..<300).contains(status)
             DispatchQueue.main.async { done(ok, ok ? elapsedMs : nil) }
         }.resume()
+    }
+
+    private static func healthURL(for baseURL: String) -> URL? {
+        guard var components = URLComponents(string: baseURL) else { return nil }
+        let trimmedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if trimmedPath.isEmpty {
+            components.path = "/health"
+        } else if trimmedPath != "health" {
+            components.path = components.path.hasSuffix("/") ? components.path + "health" : components.path + "/health"
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.url
     }
 }
 
@@ -111,7 +125,18 @@ final class Supervisor {
 final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     let cfg = Config()
     lazy var supervisor = Supervisor(cfg)
-    lazy var bridge = BridgeClient(baseURL: cfg.connectURL)
+    // 連線網址：使用者自訂（進階）> 自動臨時 tunnel（免費）> 內建 fallback。
+    private let customURLKey = "pocketCustomConnectURL"
+    var customConnectURL: String? {
+        let s = UserDefaults.standard.string(forKey: customURLKey)
+        return (s?.isEmpty ?? true) ? nil : s
+    }
+    var autoTunnelURL: String?
+    var effectiveConnectURL: String { customConnectURL ?? autoTunnelURL ?? cfg.connectURL }
+    var localBridgeURL: String { "http://127.0.0.1:\(cfg.bridgePort)" }
+    lazy var bridge = BridgeClient(baseURL: localBridgeURL, pairingBaseURL: effectiveConnectURL)
+    lazy var tunnelManager = TunnelManager(localPort: cfg.bridgePort,
+                                           cloudflaredPath: TunnelManager.resolveCloudflaredPath())
     var statusItem: NSStatusItem!
     var downloadQRWindow: NSWindow?
     var reachable = false
@@ -161,10 +186,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         // CloudKit discovery (M2a) — self-gating: silently off on builds
         // without the iCloud entitlement or when no iCloud account is present.
         setupCloudSync()
+
+        // 免費零設定：沒設自己的固定網址 → 自動開一條臨時 tunnel（trycloudflare），
+        // 網址回來就重建 client、刷新畫面。設了自訂網址（進階）就不開。
+        if customConnectURL == nil {
+            tunnelManager.onURL = { [weak self] url in
+                guard let self else { return }
+                self.autoTunnelURL = url
+                self.onConnectURLChanged()
+            }
+            tunnelManager.start()
+        }
     }
 
     func poll() {
-        supervisor.probe(cfg.connectURL) { [weak self] ok in
+        // The desktop app's own control path is the local bridge. The public
+        // tunnel can churn or fail DNS while local Hermes remains healthy, so
+        // do not use it for the menu-bar connection light.
+        supervisor.probe(localBridgeURL) { [weak self] ok in
             guard let self else { return }
             self.reachable = ok
             // v005 狀態列雙態:連線/離線各自的 template 圖(系統自動配
@@ -242,6 +281,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     /// 未登入時選單的「登入…」入口 → 開登入頁。
     @objc func showLogin() { presentOnboarding() }
 
+    /// 連線網址變了（拿到臨時 tunnel、或使用者改自訂網址）→ 重建 client、更新畫面。
+    func onConnectURLChanged() {
+        bridge = BridgeClient(baseURL: localBridgeURL, pairingBaseURL: effectiveConnectURL)
+        rebuildMenu()
+        dashboardModel?.refresh()
+        poll()
+    }
+
+    /// 使用者設/清自己的固定網址（進階）。填了 → 停臨時 tunnel、用自訂；
+    /// 清空 → 回到免費自動 tunnel。
+    func setCustomConnectURL(_ url: String?) {
+        let trimmed = url?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        UserDefaults.standard.set(value, forKey: customURLKey)
+        if value == nil {
+            // 回到免費自動 tunnel
+            tunnelManager.onURL = { [weak self] u in
+                guard let self else { return }
+                self.autoTunnelURL = u
+                self.onConnectURLChanged()
+            }
+            tunnelManager.start()
+        } else {
+            // 用自訂網址 → 不需要臨時 tunnel
+            tunnelManager.stop()
+            autoTunnelURL = nil
+        }
+        onConnectURLChanged()
+    }
+
     /// 把登入時的網路錯誤翻成看得懂、可行動的中文（防呆）。
     static func friendlyLoginError(_ e: Error) -> String {
         if let urlErr = e as? URLError {
@@ -275,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     @objc func toggleServices() { supervisor.toggle() }
 
-    @objc func quit() { supervisor.stop(); NSApp.terminate(nil) }
+    @objc func quit() { tunnelManager.stop(); supervisor.stop(); NSApp.terminate(nil) }
 
     // MARK: Download-app QR (unchanged behaviour, now using shared makeQR).
     @objc func showDownloadQR() {

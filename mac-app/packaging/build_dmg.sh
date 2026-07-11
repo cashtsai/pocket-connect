@@ -41,6 +41,13 @@ cp packaging/pocket-wordmark.png "$APPDIR/Contents/Resources/"
 cp packaging/LuckiestGuy-Regular.ttf "$APPDIR/Contents/Resources/"
 cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null || true
 
+# 免費零設定連線用的 cloudflared（自動臨時 tunnel）。有系統版就打包進去，讓使用者
+# 不用自己裝；TunnelManager.resolveCloudflaredPath() 會優先找這個打包版。-L 跟隨
+# Homebrew 的 symlink 複製真檔。codesign --deep 會一併簽它。
+for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
+  if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
+done
+
 # Sign so it launches locally. We attach the Sign in with Apple entitlement here.
 #   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper
 #     will warn on other Macs — see README).
@@ -49,15 +56,52 @@ cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null |
 #     Macs. Also embed the matching provisioning profile so the restricted
 #     applesignin entitlement is authorized.
 # Base entitlements (ad-hoc builds sign with just this — Sign in with Apple).
+REQUESTED_SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+REQUESTED_PROFILE="${PROFILE:-}"
+SCRIPT_OUT="$OUT"
+SCRIPT_APPDIR="$APPDIR"
+SCRIPT_VER="$VER"
 ENTITLEMENTS="packaging/PocketConnect.entitlements"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
+
+# ── Public-distribution track (Developer ID + notarization) ──────────────────
+# Off by default; the whole block below is gated on NOTARIZE=1 so the current
+# ad-hoc/Development flows are untouched. Turn it on ONLY once 善彰 has created a
+# "Developer ID Application" cert (see docs/M4_DEVELOPER_ID_SIGNING_SPEC.md §1 —
+# only the account holder can do that, it can't be automated).
+#
+# Then:  cp packaging/pocket-release.env.example ~/.pocket-release.env  and fill it
+#        NOTARIZE=1 ./packaging/build_dmg.sh
+#
+# ~/.pocket-release.env (never committed) supplies:
+#   SIGN_IDENTITY="Developer ID Application: <name> (4F8B93R3SH)"
+#   APPLE_ID="you@apple.id"          APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+#   TEAM_ID="4F8B93R3SH"
+NOTARIZE="${NOTARIZE:-0}"
+[[ -f "$HOME/.pocket-release.env" ]] && source "$HOME/.pocket-release.env"
+OUT="$SCRIPT_OUT"
+APPDIR="$SCRIPT_APPDIR"
+VER="$SCRIPT_VER"
+[[ -n "$REQUESTED_SIGN_IDENTITY" ]] && SIGN_IDENTITY="$REQUESTED_SIGN_IDENTITY"
+# ~/.pocket-release.env is a SHARED file across projects (also used by the
+# pocketagent iOS release lane, which sets its own PROFILE="Pocket iOS
+# AppStore" for a completely different app). If this script's caller didn't
+# explicitly pass PROFILE, don't let a same-named var leaked in from sourcing
+# that shared file silently hijack the desktop app's provisioning profile —
+# reset to empty so the desktop-specific default below (line ~93) applies.
+PROFILE="$REQUESTED_PROFILE"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # re-resolve in case the env file set it
+TEAM_ID="${TEAM_ID:-4F8B93R3SH}"
 
 # Embed the provisioning profile (real-signed builds only). Point PROFILE at a
 # .provisionprofile, or leave the default to auto-pick the installed
 # "Pocket Agent Desktop Mac Dev" profile by its known UUID.
 PROFILE="${PROFILE:-$HOME/Library/MobileDevice/Provisioning Profiles/bcd619b6-c187-49d5-8e53-085e02a79f79.provisionprofile}"
-SIGN_ENTITLEMENTS="$ENTITLEMENTS"
-if [[ "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
+SIGN_ENTITLEMENTS=""
+# Development builds embed a provisioning profile + derive get-task-allow entitlements.
+# The Developer ID / notarization path (NOTARIZE=1) must NOT: notarized apps ship with
+# a hardened runtime and no get-task-allow, and Developer ID needs no embedded profile.
+if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
   echo "▸ embed provisioning profile: $(basename "$PROFILE")"
   cp "$PROFILE" "$APPDIR/Contents/embedded.provisionprofile"
   # A provisioned app must be signed with the profile's full entitlement set
@@ -85,17 +129,47 @@ if [[ "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
     /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.icloud-container-environment' "$DERIVED"
     /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-container-environment string Development' "$DERIVED"
   fi
+  # Profiles may grant wildcard groups, but the app signature must carry
+  # concrete values. Leaving `4F8B93R3SH.*` in the signed entitlements makes
+  # macOS report "invalid entitlements blob" and ignore them, which breaks the
+  # Keychain access-group lookup used by Keychain.swift.
+  if /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups' "$DERIVED" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c 'Delete :keychain-access-groups' "$DERIVED"
+  fi
+  /usr/libexec/PlistBuddy -c 'Add :keychain-access-groups array' "$DERIVED"
+  /usr/libexec/PlistBuddy -c "Add :keychain-access-groups:0 string ${TEAM_ID}.com.pocketagent.desktop" "$DERIVED"
+  if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.ubiquity-kvstore-identifier' "$DERIVED" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :com.apple.developer.ubiquity-kvstore-identifier ${TEAM_ID}.com.pocketagent.desktop" "$DERIVED"
+  fi
   SIGN_ENTITLEMENTS="$DERIVED"
   echo "  entitlements: derived from profile (+ get-task-allow, CloudKit-coerced)"
 elif [[ "$SIGN_IDENTITY" != "-" ]]; then
   echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
+  SIGN_ENTITLEMENTS="$ENTITLEMENTS"
 fi
 
-echo "▸ codesign (identity: $SIGN_IDENTITY)"
-codesign --force --deep \
-  --entitlements "$SIGN_ENTITLEMENTS" \
-  --sign "$SIGN_IDENTITY" "$APPDIR" \
-  || echo "  (codesign failed — ad-hoc build may still run locally)"
+# Hardened runtime is REQUIRED for notarization; only add it on the Developer ID
+# path (it conflicts with the Development build's get-task-allow entitlement).
+CODESIGN_OPTS=(--force --generate-entitlement-der)
+[[ "$NOTARIZE" == "1" ]] && CODESIGN_OPTS+=(--options runtime --timestamp)
+
+if [[ -x "$APPDIR/Contents/Resources/cloudflared" ]]; then
+  echo "▸ codesign helper cloudflared"
+  codesign --force --generate-entitlement-der --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared" \
+    || echo "  (helper codesign failed — continuing; app may still run if helper is already signed)"
+fi
+
+echo "▸ codesign (identity: $SIGN_IDENTITY${NOTARIZE:+, hardened runtime})"
+if [[ -n "$SIGN_ENTITLEMENTS" ]]; then
+  codesign "${CODESIGN_OPTS[@]}" \
+    --entitlements "$SIGN_ENTITLEMENTS" \
+    --sign "$SIGN_IDENTITY" "$APPDIR" \
+    || echo "  (codesign failed — app may not pass verification)"
+else
+  codesign "${CODESIGN_OPTS[@]}" \
+    --sign "$SIGN_IDENTITY" "$APPDIR" \
+    || echo "  (codesign failed — app may not pass verification)"
+fi
 
 echo "▸ create .dmg"
 DMG="$OUT/Pocket-$VER.dmg"
@@ -105,6 +179,33 @@ ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
 hdiutil create -volname "Pocket" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
 
+# ── Notarization (public-distribution track) ─────────────────────────────────
+# Submit the .dmg to Apple and staple the ticket so any Mac's Gatekeeper accepts
+# a double-click with no "unidentified developer" prompt. Gated on NOTARIZE=1.
+if [[ "$NOTARIZE" == "1" ]]; then
+  if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "✗ NOTARIZE=1 但 SIGN_IDENTITY 還是 ad-hoc(-)。要用 Developer ID Application 憑證。" >&2
+    echo "  在 ~/.pocket-release.env 設 SIGN_IDENTITY / APPLE_ID / APP_SPECIFIC_PASSWORD。" >&2
+    exit 1
+  fi
+  if [[ -z "${APPLE_ID:-}" || -z "${APP_SPECIFIC_PASSWORD:-}" ]]; then
+    echo "✗ 缺 APPLE_ID / APP_SPECIFIC_PASSWORD（放 ~/.pocket-release.env）。" >&2
+    echo "  App 專用密碼在 https://account.apple.com → 登入與安全 → App 專用密碼 產生。" >&2
+    exit 1
+  fi
+  echo "▸ notarytool submit（送 Apple 公證，通常幾分鐘）"
+  xcrun notarytool submit "$DMG" \
+    --apple-id "$APPLE_ID" --team-id "$TEAM_ID" \
+    --password "$APP_SPECIFIC_PASSWORD" --wait
+  echo "▸ stapler staple"
+  xcrun stapler staple "$DMG"
+  echo "▸ 驗收：spctl 應回 accepted / source=Notarized Developer ID"
+  spctl -a -vvv "$APPDIR" 2>&1 || true
+fi
+
 echo "✓ done:"
 echo "  app: $APPDIR"
 echo "  dmg: $DMG"
+if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" == "-" ]]; then
+  echo "  ⚠ ad-hoc 簽章 — 別台 Mac 會被 Gatekeeper 擋，需右鍵→打開（見 docs/INSTALL_FAQ.md）。"
+fi

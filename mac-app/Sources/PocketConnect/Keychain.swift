@@ -19,31 +19,45 @@ enum Keychain {
     private static let accessGroup = "4F8B93R3SH.com.pocketagent.desktop"
 
     /// Base query shared by save/load/clear so the item is addressed identically.
-    private static func baseQuery() -> [String: Any] {
-        [
+    private static func baseQuery(useAccessGroup: Bool) -> [String: Any] {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: accessGroup,
-            kSecUseDataProtectionKeychain as String: true,
         ]
+        if useAccessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+            query[kSecUseDataProtectionKeychain as String] = true
+        }
+        return query
     }
 
     /// Store (or replace) the session token. Returns the SecItemAdd OSStatus
     /// (`errSecSuccess` on success) so callers can surface the real code.
     @discardableResult
     static func saveSessionToken(_ token: String) -> OSStatus {
-        var attrs = baseQuery()
+        var attrs = baseQuery(useAccessGroup: true)
         // Delete any existing item first, then add fresh — simplest correct upsert.
-        SecItemDelete(attrs as CFDictionary)
+        clearSessionToken()
         attrs[kSecValueData as String] = Data(token.utf8)
         attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        return SecItemAdd(attrs as CFDictionary, nil)
+        let status = SecItemAdd(attrs as CFDictionary, nil)
+        if status == errSecSuccess { return status }
+
+        var fallback = baseQuery(useAccessGroup: false)
+        fallback[kSecValueData as String] = Data(token.utf8)
+        fallback[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        return SecItemAdd(fallback as CFDictionary, nil)
     }
 
     /// Load the stored session token, or nil if none.
     static func loadSessionToken() -> String? {
-        var query = baseQuery()
+        if let token = loadSessionToken(useAccessGroup: true) { return token }
+        return loadSessionToken(useAccessGroup: false)
+    }
+
+    private static func loadSessionToken(useAccessGroup: Bool) -> String? {
+        var query = baseQuery(useAccessGroup: useAccessGroup)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
@@ -56,6 +70,7 @@ enum Keychain {
 
     /// Remove the stored session token (used by "重新設定").
     static func clearSessionToken() {
-        SecItemDelete(baseQuery() as CFDictionary)
+        SecItemDelete(baseQuery(useAccessGroup: true) as CFDictionary)
+        SecItemDelete(baseQuery(useAccessGroup: false) as CFDictionary)
     }
 }

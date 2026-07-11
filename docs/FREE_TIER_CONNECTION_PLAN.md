@@ -80,13 +80,19 @@ quick tunnel 每次重開網址會換。對策（擇一或並用）：
 - [ ] quick tunnel 的**可靠度/速率限制**可接受嗎？（Cloudflare 免費服務、非正式 SLA；個人用通常 OK）
 - [x] ~~CloudKit discovery 傳 hostCandidates 給手機？~~ **已決策**：免費 tier 強制開 iCloud（見 §3），CloudKit 就是傳遞管道，不另做備援。
 
-## 7. 建議做的順序
+## 7. 進度（2026-07-07）
 
-1. §1 打包 cloudflared + 桌面自動跑 quick tunnel + 解析 URL
-2. §2 un-hardcode connectURL（自動 tunnel 為預設）
-3. §3 驗證手機探測（含桌面重開後 URL 變）→ 決定要不要補非-CloudKit 更新路徑
-4. §4 進階「連線設定」UI
-5. §5 測試矩陣：在家 / 出門 × 有無 Tailscale × 有無自訂網址
+- [x] §1 桌面自動跑 quick tunnel + 解析網址（`TunnelManager.swift`，已實測產生 `trycloudflare` 網址）
+- [x] §1 打包 cloudflared 進 `.app`（`build_dmg.sh`；`resolveCloudflaredPath` 優先找打包版）
+- [x] §2 un-hardcode connectURL（`effectiveConnectURL = 自訂 ?? 自動tunnel ?? fallback`，5 處路由完成）
+- [x] §4 進階「連線設定」UI（控制台「連線設定」卡：網址欄位 + 測試連線 + 儲存 + 金鑰狀態；填了走自訂、留空走免費自動 tunnel）
+- [x] §1 監看 process 掛掉自動重啟（`shouldRun` + terminationHandler 3 秒後 relaunch）
+- [x] §3 **iCloud 強制**（免費路徑配對前查 `CKContainer.accountStatus`，沒開就擋、引導去開）
+- [x] §4 金鑰讀不到時的手動貼欄位（`BridgeToken.setOverride` + 連線設定 SecureField）
+- [x] cloudflared 打包 + codesign --deep 簽進 app、`--verify --deep --strict` 過；**實測 app 會自己 spawn 打包版 cloudflared 起臨時 tunnel**（adhoc 簽章、當子程序執行 OK）
+- [ ] §3 **端到端測試（需真手機）**：手機掃 QR 配對 → 桌面重開網址變 → 確認手機經 CloudKit 跟上還連得到
+- [ ] §5 測試矩陣：在家 / 出門 × 有無 Tailscale × 有無自訂網址
+- [ ] 公開發佈才需要：Developer ID 簽章 + notarization（現在是 Development 簽章）
 
 ---
 
