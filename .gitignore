@@ -3,3 +3,5 @@
 .DS_Store
 mac-app/build/
 mac-app/.build/
+mac-app/packaging/MenuBarIcon_*backup*.png
+mac-app/packaging/*_v1_with_border_P.png

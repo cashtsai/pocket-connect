@@ -148,6 +148,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     private var pairWindowView: PairingQRView?
     private var pairWindowCoordinator: PairingCoordinator?
 
+    // M2 — Claude/Codex account linking window (retained so it isn't deallocated
+    // while open; recreated on demand from the menu).
+    private var accountLinking: AccountLinkingWindowController?
+
     // CloudKit discovery layer (M2a) — nil until setupCloudSync() runs.
     var cloudSync: CloudSyncController?
     var cloudStatusText = "—"
@@ -265,9 +269,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         loginLine.isEnabled = false
         m.addItem(loginLine)
         m.addItem(.separator())
-        // 未登入 → 只能「登入」；登入後才有「控制台」。
+        // 未登入 → 只能「登入」；登入後才有「控制台」+「帳號連結」。
         if isSignedIn {
             m.addItem(NSMenuItem(title: "控制台", action: #selector(showDashboard), keyEquivalent: "d"))
+            m.addItem(NSMenuItem(title: "帳號連結…", action: #selector(showAccountLinking), keyEquivalent: "l"))
         } else {
             m.addItem(NSMenuItem(title: "登入…", action: #selector(showLogin), keyEquivalent: "d"))
         }
@@ -309,6 +314,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             autoTunnelURL = nil
         }
         onConnectURLChanged()
+    }
+
+    /// M2 —「帳號連結…」入口 → 開 Claude/Codex 帳號連結視窗（獨立於 Apple 登入
+    /// 與 QR 配對流程；開窗即冷啟動偵測兩邊 CLI 狀態）。
+    @objc func showAccountLinking() {
+        let controller = accountLinking ?? AccountLinkingWindowController()
+        accountLinking = controller
+        controller.present()
     }
 
     /// 把登入時的網路錯誤翻成看得懂、可行動的中文（防呆）。
