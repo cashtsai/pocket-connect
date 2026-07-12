@@ -14,9 +14,12 @@
 #     的機器整段跳過,不動現有設定。
 #   · bridge LaunchAgent 的 label/路徑沿用 ai.studio.hermes-bridge —— app 的
 #     BridgeToken.read() 綁定這個 plist 路徑。已存在的 plist 一律保留不覆寫。
+#   · bridge 原始碼已開源(github.com/cashtsai/hermes-studio-bridge,2026-07-12
+#     善彰拍板);本機沒有時自動 git clone,可用 POCKET_BRIDGE_REPO 覆寫來源。
 set -euo pipefail
 
 BRIDGE_DIR="${POCKET_BRIDGE_DIR:-$HOME/apps/hermes-openwebui-bridge}"
+BRIDGE_REPO="${POCKET_BRIDGE_REPO:-https://github.com/cashtsai/hermes-studio-bridge.git}"
 LABEL="ai.studio.hermes-bridge"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 PORT="${POCKET_BRIDGE_PORT:-8081}"
@@ -72,7 +75,17 @@ fi
 if [ -f "$PLIST" ]; then
   echo "  已存在 $PLIST,保留現有設定"
 else
-  [ -f "$BRIDGE_DIR/bridge.py" ] || fail "找不到 bridge 原始碼（$BRIDGE_DIR/bridge.py）。bridge 目前尚未隨 hermes-agent 發佈,請先取得 hermes-studio-bridge 放到該路徑,或以 POCKET_BRIDGE_DIR 指定位置。"
+  if [ ! -f "$BRIDGE_DIR/bridge.py" ]; then
+    if [ -d "$BRIDGE_DIR" ] && [ -n "$(ls -A "$BRIDGE_DIR" 2>/dev/null)" ]; then
+      fail "$BRIDGE_DIR 已存在但缺 bridge.py,不敢覆蓋。請清空該目錄讓腳本重新 clone,或以 POCKET_BRIDGE_DIR 指定正確位置。"
+    fi
+    # 全新機器的 git 是 CLT stub,直接呼叫會跳 GUI 安裝視窗且失敗,先擋下來。
+    xcode-select -p >/dev/null 2>&1 \
+      || fail "git 需要 Xcode Command Line Tools。請先在終端機執行 xcode-select --install,裝完再按「重新檢查」。"
+    echo "▸ 取得 bridge 原始碼（$BRIDGE_REPO）..."
+    git clone --depth 1 "$BRIDGE_REPO" "$BRIDGE_DIR" \
+      || fail "git clone $BRIDGE_REPO 失敗,詳見上方輸出。"
+  fi
   BRIDGE_PY="$PY"
   [ -x "$VENV/bin/python" ] && BRIDGE_PY="$VENV/bin/python"
   "$BRIDGE_PY" -c 'import uvicorn, fastapi' 2>/dev/null \
