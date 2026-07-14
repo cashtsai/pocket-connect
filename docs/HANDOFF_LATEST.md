@@ -29,9 +29,8 @@
 
 ## 待拍板／未完成
 
-- **bridge repo 補 MIT LICENSE**：前輪善彰已說「可以動 bridge repo main」，
-  但本輪善彰指示「不得做正式發布」，推 LICENSE 上公開 repo main 屬對外動作，
-  已擱置待重新確認。repo 目前公開但無授權（公開 ≠ 開源授權）。
+- ~~bridge repo 補 MIT LICENSE~~ **已完成**（2026-07-14 善彰拍板「LICENSE
+  可以推了」，commit 9e1ac64 直推 bridge repo main，GitHub 已識別為 MIT）。
 - bridge repo 內部文件（HANDOFF_CREDENTIALS.md 等）是否清理，仍待拍板
   （在 git 歷史裡，徹底清要 rewrite history + force push）。
 
@@ -40,4 +39,4 @@
 1. 找乾淨 macOS 使用者帳號跑真實冷啟動驗收（spec §5 驗收第 1、2 項，XCash
    線，spec §6）——bridge 可自動 clone，「全新機器全自動裝到能配對」應可全程走通。
 2. 驗收過後把 feat/m3-env-detection 出 PR。
-3. LICENSE 與內部文件清理重新拍板後另行執行。
+3. bridge repo 內部文件清理拍板後另行執行。
