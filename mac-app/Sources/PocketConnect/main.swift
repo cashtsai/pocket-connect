@@ -13,6 +13,9 @@ struct Config {
     // Public connect URL the phone points at (the Cloudflare tunnel hostname).
     // Also the base for all bridge app-API calls (auth/apple, pair/new).
     var connectURL = "https://pocket.tsai.cash"
+    // Fixed Apple web-auth broker. Unlike connectURL/tunnel discovery, Apple's
+    // registered return URL cannot change per user or per launch.
+    var webAuthURL = "https://pocket.tsai.cash"
     // Where users download the iOS app (TestFlight public link / App Store).
     var downloadURL = "https://testflight.apple.com/"   // TODO: real link
     // UserDefaults flag marking first-run onboarding as complete.
@@ -135,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     var effectiveConnectURL: String { customConnectURL ?? autoTunnelURL ?? cfg.connectURL }
     var localBridgeURL: String { "http://127.0.0.1:\(cfg.bridgePort)" }
     lazy var bridge = BridgeClient(baseURL: localBridgeURL, pairingBaseURL: effectiveConnectURL)
+    lazy var webAuthBridge = BridgeClient(baseURL: cfg.webAuthURL)
     lazy var tunnelManager = TunnelManager(localPort: cfg.bridgePort,
                                            cloudflaredPath: TunnelManager.resolveCloudflaredPath())
     var statusItem: NSStatusItem!
@@ -144,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     // Onboarding + pairing state.
     private var onboarding: OnboardingWindowController?
     private var onboardingPairing: PairingCoordinator?
+    private var webAppleSignIn: WebAppleSignInCoordinator?
     private var pairWindow: NSWindow?
     private var pairWindowView: PairingQRView?
     private var pairWindowCoordinator: PairingCoordinator?
@@ -400,6 +405,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     // MARK: Onboarding
     @objc func resetOnboarding() {
+        webAppleSignIn?.cancel()
+        webAppleSignIn = nil
         Keychain.clearSessionToken()
         UserDefaults.standard.set(false, forKey: cfg.onboardedKey)
         // 登出 → 強制關掉控制台，回到登入頁。
@@ -420,33 +427,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     // OnboardingDelegate — the delegate owns the actual auth + pairing calls.
     func onboardingDidTapSignIn(_ c: OnboardingWindowController) {
+        if AppleSignInCoordinator.isAvailableForCurrentBuild {
+            startNativeAppleSignIn(c)
+        } else {
+            startWebAppleSignIn(c)
+        }
+    }
+
+    private func startNativeAppleSignIn(_ c: OnboardingWindowController) {
         guard let window = c.window else { return }
         let coordinator = AppleSignInCoordinator(presentingOver: window)
         coordinator.start { [weak self, weak c] result in
             guard let self, let c else { return }
             switch result {
-            case .failure(let e):
-                c.showSignInError("Apple 登入失敗:\(e.localizedDescription)")
-            case .success(let cred):
-                self.bridge.authApple(appleUserID: cred.userID, identityToken: cred.identityToken,
-                                      displayName: cred.displayName, email: cred.email) { authResult in
-                    switch authResult {
-                    case .failure(let e):
-                        c.showSignInError(Self.friendlyLoginError(e))
-                    case .success(let session):
-                        let st = Keychain.saveSessionToken(session.sessionToken)
-                        guard st == errSecSuccess else {
-                            return c.showSignInError("無法寫入 Keychain (OSStatus \(st))")
-                        }
-                        UserDefaults.standard.set(true, forKey: self.cfg.onboardedKey)
-                        self.rebuildMenu()
-                        // 登入成功 → 關掉登入頁，直接打開控制台。
-                        c.window?.close()
-                        self.onboarding = nil
-                        self.showDashboard()
-                    }
+            case .failure(let error):
+                c.showSignInError(Self.friendlyLoginError(error))
+            case .success(let credential):
+                self.bridge.authApple(
+                    appleUserID: credential.userID,
+                    identityToken: credential.identityToken,
+                    displayName: credential.displayName,
+                    email: credential.email
+                ) { [weak self, weak c] authResult in
+                    guard let self, let c else { return }
+                    self.completeAppleSignIn(authResult, controller: c)
                 }
             }
+        }
+    }
+
+    private func startWebAppleSignIn(_ c: OnboardingWindowController) {
+        webAppleSignIn?.cancel()
+        let coordinator = WebAppleSignInCoordinator(bridge: webAuthBridge)
+        webAppleSignIn = coordinator
+        coordinator.start { [weak self, weak c] result in
+            guard let self, let c else { return }
+            self.webAppleSignIn = nil
+            switch result {
+            case .failure(let error):
+                c.showSignInError(Self.friendlyLoginError(error))
+            case .success(let identity):
+                self.bridge.authApple(
+                    appleUserID: identity.appleUserID,
+                    identityToken: identity.identityToken,
+                    displayName: identity.displayName,
+                    email: identity.email
+                ) { [weak self, weak c] authResult in
+                    guard let self, let c else { return }
+                    self.completeAppleSignIn(authResult, controller: c)
+                }
+            }
+        }
+    }
+
+    private func completeAppleSignIn(
+        _ result: Result<AppleAuthResult, Error>,
+        controller c: OnboardingWindowController
+    ) {
+        switch result {
+        case .failure(let error):
+            c.showSignInError(Self.friendlyLoginError(error))
+        case .success(let session):
+            let status = Keychain.saveSessionToken(session.sessionToken)
+            guard status == errSecSuccess else {
+                return c.showSignInError("無法寫入 Keychain (OSStatus \(status))")
+            }
+            UserDefaults.standard.set(true, forKey: cfg.onboardedKey)
+            rebuildMenu()
+            c.window?.close()
+            onboarding = nil
+            showDashboard()
         }
     }
 
@@ -460,6 +510,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     }
 
     func onboardingWindowDidClose(_ c: OnboardingWindowController) {
+        webAppleSignIn?.cancel()
+        webAppleSignIn = nil
         onboardingPairing?.stop()
         onboardingPairing = nil
         onboarding = nil

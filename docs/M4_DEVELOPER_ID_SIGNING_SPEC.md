@@ -52,21 +52,52 @@ cd mac-app
 NOTARIZE=1 ./packaging/build_dmg.sh
 ```
 
-### 2.2 CI（GitHub Actions）要補的部分
+### 2.2 CI（GitHub Actions）
 
-`release.yml` 需要：
-- 把 `.p12` + 密碼存進 GitHub repo secrets（`DEVELOPER_ID_P12_BASE64`、`DEVELOPER_ID_P12_PASSWORD`）
-- Runner 匯入憑證到暫時 keychain：
-  ```yaml
-  - name: Import signing cert
-    run: |
-      echo "$P12_BASE64" | base64 --decode > cert.p12
-      security create-keychain -p temp build.keychain
-      security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
-      security list-keychains -d user -s build.keychain
-      security unlock-keychain -p temp build.keychain
-  ```
-- 公證步驟需要 `APPLE_ID` + App-specific password 或 App Store Connect API key，同樣存 secrets
+`.github/workflows/release.yml` 已改為正式發行軌：
+
+1. 在 Apple Silicon `macos-15` runner 驗證 tag 與 `Info.plist` 版本一致。
+2. 執行完整 Swift 測試並安裝要內嵌的 `cloudflared`。
+3. 從 GitHub Secrets 把 Developer ID `.p12` 匯入一次性 keychain。
+4. 嵌入 Developer ID profile，執行 hardened-runtime 簽章、公證與 staple。
+5. 以 `codesign`、`spctl`、`stapler validate` 驗收。
+6. GitHub Release 同時發布 DMG 與 SHA-256。
+
+Repo Settings → Secrets and variables → Actions 必須設定：
+
+| Secret | 內容 |
+|---|---|
+| `MACOS_CERTIFICATE_P12_BASE64` | Developer ID Application `.p12` 的 base64 |
+| `MACOS_CERTIFICATE_PASSWORD` | 該 `.p12` 的匯出密碼 |
+| `DEVELOPER_ID_PROFILE_BASE64` | `Pocket Desktop DevID` profile 的 base64 |
+| `APPLE_NOTARY_KEY_P8_BASE64` | App Store Connect / notarytool API key `.p8` 的 base64 |
+| `APPLE_NOTARY_KEY_ID` | 公證 API key ID |
+| `APPLE_NOTARY_ISSUER_ID` | 公證 API issuer ID |
+
+以上 secrets 只用於建置與公證。Web Sign in with Apple 的私鑰屬於 Bridge
+runtime，不能放進 DMG，也不要與發行憑證混用。
+
+### 2.3 公開版 Web Sign in with Apple
+
+程式碼已完成：
+
+- Developer ID 簽章沒有 `com.apple.developer.applesignin` 時，Pocket 自動改開系統瀏覽器。
+- 固定網域 `pocket.tsai.cash` 的 auth broker 建立 10 分鐘單次流程，使用 `state`
+  防 CSRF、`nonce` 防重放，並限制每個來源的建立頻率。
+- Apple callback 不回傳 token；broker 先用專用 client secret 向 Apple 交換並驗證
+  authorization code，再讓 Pocket 以 `flow_id` + `poll_secret` 一次性取回 Apple
+  identity proof。
+- Pocket 把 proof 交給自己的 `127.0.0.1` Bridge 驗簽並建立本機 account session；
+  callback 不會把公開使用者寫進 CashCamp 的帳號資料庫。
+- Development / Mac App Store 簽章仍保留原生 `ASAuthorizationController`。
+
+Apple Developer Portal 還需完成：
+
+- Services ID：`com.pocketagent.web`
+- Domain：`pocket.tsai.cash`
+- Return URL：`https://pocket.tsai.cash/app/v1/auth/apple/web/callback`
+- 建立 Sign in with Apple private key，綁定 primary App ID
+  `com.pocketagent.desktop`
 
 ---
 
@@ -77,7 +108,7 @@ NOTARIZE=1 ./packaging/build_dmg.sh
 | 全新未註冊 Mac 安裝 | 雙擊 `.dmg` 開啟，Gatekeeper 不擋（或只需一次「打開」確認，無「無法確認開發者」錯誤）|
 | `spctl` 檢查 | `spctl -a -vvv /Applications/Pocket.app` 回傳 `accepted`，`source=Notarized Developer ID` |
 | Production CloudKit | 簽章含 `iCloud.com.pocketagent`，環境為 `Production` |
-| 公開版 Apple 登入 | Web Sign in with Apple 完成後才能驗收；Developer ID 不支援原生登入 |
+| 公開版 Apple 登入 | Portal 與 Bridge secrets 設定後，瀏覽器完成登入並由 Pocket 取回 session |
 | CI 自動化 | push tag 後 GitHub Actions 自動出「已公證」的 `.dmg`，不需手動本機跑 |
 
 ---
@@ -87,9 +118,8 @@ NOTARIZE=1 ./packaging/build_dmg.sh
 | 線 | 工作 |
 |---|---|
 | 善彰 | Developer ID 憑證與正式 profile 已建立；保管 `.p12` 備份密碼 |
-| XCash | `.p12` 已放安全位置（不進 git）；GitHub secrets 待補 |
-| Codex | 本機 profile / 簽章 / 公證 / 安裝已完成；CI workflow 待補 secrets 後改造 |
-| CC | 公開版 Web Sign in with Apple 流程待實作 |
+| XCash | `.p12` 已放安全位置（不進 git）；完成 Apple Portal 登入 / 2FA |
+| Codex | 本機簽章、公證、Web 登入程式與 CI workflow 已完成；待補 secrets 與正式驗收 |
 
 ---
 
@@ -97,5 +127,6 @@ NOTARIZE=1 ./packaging/build_dmg.sh
 
 - GitHub Actions 尚未放入 Developer ID `.p12`、profile 與公證 API key secrets，因此
   tag release 仍不可視為正式發行來源。
-- 公開 DMG 的 Apple 登入需另做 Web Sign in with Apple；目前原生登入只適用
-  Development / Mac App Store 軌。
+- Apple Portal 尚未建立 Services ID / Return URL / Sign in with Apple key，Bridge
+  runtime 環境也尚未注入該 key。
+- 完成以上設定後，才進行公開 DMG 端到端登入與全新 Mac 安裝驗收。

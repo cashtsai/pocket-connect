@@ -1,5 +1,6 @@
 import AppKit
 import AuthenticationServices
+import Security
 
 // Native Sign in with Apple for AppKit/macOS.
 //
@@ -18,6 +19,19 @@ struct AppleCredential {
 
 final class AppleSignInCoordinator: NSObject,
     ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+
+    static var isAvailableForCurrentBuild: Bool {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let entitlement = SecTaskCopyValueForEntitlement(
+                task,
+                "com.apple.developer.applesignin" as CFString,
+                nil
+              ) as? [String]
+        else {
+            return false
+        }
+        return entitlement.contains("Default")
+    }
 
     private let anchor: NSWindow
     private var completion: ((Result<AppleCredential, Error>) -> Void)?
