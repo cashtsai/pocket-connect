@@ -7,12 +7,12 @@
 **下載 `.dmg` → 拖進 Applications → 開啟 → 選單列出現圖示 → 顯示「下載 App QR」→ 手機掃碼裝 App → 收工。**
 
 ## 現在做到哪
-雛形(v0.1,可編譯可打包):
+正式底盤(v0.2,可編譯、簽章、公證與安裝):
 - 選單列 App(AppKit agent,`LSUIElement`,無 Dock 圖示)
 - 狀態列:品牌「P」圖示(紅底白 P 的 template 版,自動適應淺/深色),每 8 秒探測 `pocket.tsai.cash` 可達性,連線狀態顯示在滑鼠停留的 tooltip(`Pocket — ● 已連線 / ○ 離線`)
 - 選單:**複製連線網址**、**顯示下載 App QR**(CoreImage 產生)、**啟動/停止服務**、結束
 - **服務 supervise**:啟動/停止本機 `bridge`(uvicorn)+ `cloudflared`(pocket tunnel)
-- **打包**:`packaging/build_dmg.sh` → `Pocket Connect.app` + `PocketConnect-<ver>.dmg`
+- **打包**:`packaging/build_dmg.sh` → `Pocket.app` + `Pocket-<ver>.dmg`
 
 ## M1 新增(登入 + 配對 QR + 發佈)
 - **首次啟動引導**:第一次開啟彈出視窗(歡迎 → Apple 登入 → 配對 QR)。用
@@ -84,14 +84,17 @@ swift run            # 直接跑(選單列會出現 P 圖示)
 ## 下一步(待辦)
 - [x] **首次設定 / 引導**:首次啟動引導(M1)已做,`Config` 仍寫死預設值,尚未做設定頁。
 - [x] **配對 QR**:已做「配對這台桌機」帳號綁定一次性 code QR(M1)。
-- [x] **公開版 Apple 登入程式**:Developer ID 自動走瀏覽器 callback + 本機輪詢；
-  Apple Portal Services ID / key 與 Bridge runtime secrets 待部署驗收。
-- [ ] **Bundling deps**:把 `cloudflared`(必要時連 bridge runtime)打包進 `Contents/Resources`,使用者不用先裝任何東西(腳本內已留註解位置)。
+- [x] **公開版 Apple 登入底盤**:Developer ID 自動走瀏覽器 callback + 本機輪詢；
+  Apple Portal Services ID / key、固定網域 broker 與 Bridge runtime secrets 已部署，
+  自動化驗收通過，待真人 Apple Account 完成最後端到端登入確認。
+- [x] **Bundling cloudflared**:`build_dmg.sh` 會把 Homebrew 的實體 binary 打包進
+  `Contents/Resources` 並一起簽章。
+- [ ] **Bundling bridge runtime**:全新使用者仍需要 bridge runtime 安裝／啟動方案。
 - [ ] **登入自啟**:`SMAppService`(Login Item),讓服務開機常駐。
 - [ ] **連上自動開好 Hermes(商業)**:啟動時拉起 personas + 連接器。
 - [x] **簽章 & 公證(Signing & notarization)**:Developer ID 憑證 + 正式 CloudKit
   provisioning profile + `notarytool` 公證流程已接通。
-- [ ] **狀態列圖示**:換成 P logo(`Contents/Resources/AppIcon.icns` + template image)。
+- [x] **狀態列圖示**:已使用品牌 template image，App 亦包含 `AppIcon.icns`。
 
 ## 商業化定位
 - OSS:這個桌面 App 的「區網直連 / BYO tunnel」基本款。

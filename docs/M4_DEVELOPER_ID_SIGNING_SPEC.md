@@ -1,6 +1,7 @@
 # M4 施工規格：Developer ID 簽章 + 公證
 
-> 2026-07-23 · Developer ID + Production CloudKit 本機發行流程已完成並驗收。
+> 2026-07-23 · Developer ID + Production CloudKit 本機發行、Apple Web auth broker
+> 部署與正式安裝均已完成。
 
 ---
 
@@ -101,6 +102,24 @@ Apple Developer Portal 已於 2026-07-23 完成：
 - 本機 key：`~/.pocket-release-secrets/apple-signin/AuthKey_QD9D22NS7C.p8`
   （目錄 `0700`、檔案 `0600`，不進 git）
 
+### 2.4 2026-07-23 正式部署紀錄
+
+- Bridge `main` 已部署並推送至 GitHub（merge head `f26c002`）；production LaunchAgent
+  已注入 Services ID、return URL、Team ID、Key ID 與 mode-600 `.p8` 路徑。
+- Pocket 分支 `feat/one-click-agent-connect` 已推送至 GitHub（head `5bcdd60`）。
+- `NOTARIZE=1 ./packaging/build_dmg.sh` 完成；Apple notarization submission ID：
+  `b9cd7e3e-3dc9-4e74-a03b-19b01a88a0ba`，狀態 `Accepted`。
+- 產物：`mac-app/build/Pocket-0.2.dmg`。`codesign --verify --deep --strict`、
+  `spctl -a -vvv` 與 `xcrun stapler validate` 均通過；Gatekeeper 顯示
+  `source=Notarized Developer ID`。
+- 正式 entitlement 為 `iCloud.com.pocketagent` / `Production`，Keychain group 為
+  `4F8B93R3SH.com.pocketagent.desktop`，且不含 Developer ID 不支援的
+  `com.apple.developer.applesignin`。
+- 新版已安裝至 `/Applications/Pocket.app`；替換前版本保留於
+  `/Applications/Pocket.app.pre-web-apple-20260723-103441`。
+- 安裝前後 11 個 tmux 工作 session 數量與名稱不變；只重啟 Pocket 並清除它遺留的
+  3 個舊 `cloudflared` helper。
+
 ---
 
 ## 3. 驗收標準
@@ -121,7 +140,7 @@ Apple Developer Portal 已於 2026-07-23 完成：
 |---|---|
 | 善彰 | Developer ID 憑證與正式 profile 已建立；保管 `.p12` 備份密碼 |
 | XCash | `.p12` 與 SIWA `.p8` 已放安全位置（不進 git） |
-| Codex | Portal、程式與 CI workflow 已完成；待授權合併／重啟、補 GitHub secrets 與正式驗收 |
+| Codex | Portal、程式、Bridge production、正式公證與安裝已完成；補 GitHub secrets 與真人登入驗收中 |
 
 ---
 
@@ -129,7 +148,7 @@ Apple Developer Portal 已於 2026-07-23 完成：
 
 - GitHub Actions 尚未放入 Developer ID `.p12`、profile 與公證 API key secrets，因此
   tag release 仍不可視為正式發行來源。
-- Bridge 功能分支尚未獲准合併／重啟，runtime 環境也尚未注入 Services ID、Key ID
-  與 `.p8` 路徑。
 - GitHub CLI 需要重新登入，且 `.p12` 匯出密碼仍需確認，才能補齊 Actions secrets。
-- 完成部署後，再進行公開 DMG 端到端登入與全新 Mac 安裝驗收。
+- 以真人 Apple Account 完成公開 DMG 的 Web Sign in with Apple，確認 browser callback、
+  broker 一次性 proof 與本機 account session 全鏈路。
+- 最後再以另一台全新、未註冊開發裝置的 Mac 重跑一次安裝驗收。
