@@ -149,8 +149,13 @@ if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
   SIGN_ENTITLEMENTS="$DERIVED"
   echo "  entitlements: derived from profile (+ get-task-allow, CloudKit-coerced)"
 elif [[ "$SIGN_IDENTITY" != "-" ]]; then
-  echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
-  SIGN_ENTITLEMENTS="$ENTITLEMENTS"
+  if [[ "$NOTARIZE" == "1" ]]; then
+    echo "  Developer ID notarization: signing without development-only Apple/iCloud entitlements"
+    echo "  ⚠ 未嵌入 Developer ID provisioning profile — Sign in with Apple / CloudKit 會停用"
+  else
+    echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
+    SIGN_ENTITLEMENTS="$ENTITLEMENTS"
+  fi
 fi
 
 # Hardened runtime is REQUIRED for notarization; only add it on the Developer ID

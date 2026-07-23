@@ -92,8 +92,9 @@ final class AccountLinkChecker {
             // `claude auth status --json` → stdout JSON:
             //   {"loggedIn":bool,"email":..,"subscriptionType":..}
             guard let json = try? JSONSerialization.jsonObject(with: outData) as? [String: Any],
-                  let loggedIn = json["loggedIn"] as? Bool else { return .unlinked }
-            if !loggedIn { return .unlinked }
+                  let loggedIn = json["loggedIn"] as? Bool
+            else { return claudeOAuthProfileFallback() ?? .unlinked }
+            if !loggedIn { return claudeOAuthProfileFallback() ?? .unlinked }
             return .linked(email: json["email"] as? String,
                            plan: json["subscriptionType"] as? String)
         case .codex:
@@ -107,6 +108,23 @@ final class AccountLinkChecker {
             }
             return .unlinked
         }
+    }
+
+    /// Claude Code 2.1.207 can have a working TUI `/status` login while
+    /// `claude auth status --json` still reports `loggedIn:false`. Use the
+    /// non-secret local profile as a display fallback; never read or copy tokens.
+    private static func claudeOAuthProfileFallback() -> LinkStatus? {
+        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude.json")
+        guard let data = try? Data(contentsOf: url),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let account = root["oauthAccount"] as? [String: Any],
+              !account.isEmpty
+        else { return nil }
+
+        let email = account["emailAddress"] as? String
+        let plan = (account["seatTier"] as? String) ?? (account["billingType"] as? String)
+        return .linked(email: email?.isEmpty == true ? nil : email,
+                       plan: plan?.isEmpty == true ? nil : plan)
     }
 
     /// Trigger login (opens a browser). Fire-and-forget — the command may hang
