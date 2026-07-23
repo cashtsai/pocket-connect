@@ -48,27 +48,30 @@ for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
   if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
 done
 
-# Sign so it launches locally. We attach the Sign in with Apple entitlement here.
+# Sign so it launches locally. Restricted entitlements always come from the
+# matching provisioning profile; never add them to a distribution signature by
+# hand.
 #   - SIGN_IDENTITY unset  → ad-hoc (local dev; Apple login won't work, Gatekeeper
 #     will warn on other Macs — see README).
 #   - SIGN_IDENTITY=<Apple Development sha1/name tied to Team 4F8B93R3SH> → a
 #     Development build that can complete real Sign in with Apple on registered
 #     Macs. Also embed the matching provisioning profile so the restricted
 #     applesignin entitlement is authorized.
-# Base entitlements (ad-hoc builds sign with just this — Sign in with Apple).
+#   - NOTARIZE=1 + Developer ID Application → public distribution. The matching
+#     Developer ID profile enables Production CloudKit, but Apple does not allow
+#     the native Sign in with Apple entitlement on Developer ID profiles.
 REQUESTED_SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 REQUESTED_PROFILE="${PROFILE:-}"
+REQUESTED_DESKTOP_PROFILE="${DESKTOP_PROFILE:-}"
 SCRIPT_OUT="$OUT"
 SCRIPT_APPDIR="$APPDIR"
 SCRIPT_VER="$VER"
-ENTITLEMENTS="packaging/PocketConnect.entitlements"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
 
 # ── Public-distribution track (Developer ID + notarization) ──────────────────
-# Off by default; the whole block below is gated on NOTARIZE=1 so the current
-# ad-hoc/Development flows are untouched. Turn it on ONLY once 善彰 has created a
-# "Developer ID Application" cert (see docs/M4_DEVELOPER_ID_SIGNING_SPEC.md §1 —
-# only the account holder can do that, it can't be automated).
+# Off by default; the whole block below is gated on NOTARIZE=1 so ad-hoc and
+# Development builds are untouched. The release certificate and Developer ID
+# profile are documented in docs/M4_DEVELOPER_ID_SIGNING_SPEC.md.
 #
 # Then:  cp packaging/pocket-release.env.example ~/.pocket-release.env  and fill it
 #        NOTARIZE=1 ./packaging/build_dmg.sh
@@ -77,6 +80,7 @@ SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
 # for notarytool (API key preferred — reuses the same ASC key asc.py already
 # uses for TestFlight uploads, no extra Apple-ID app-specific-password needed):
 #   SIGN_IDENTITY="Developer ID Application: <name> (4F8B93R3SH)"
+#   DESKTOP_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/pocket-desktop-developer-id.provisionprofile"
 #   TEAM_ID="4F8B93R3SH"
 #   # Path A (preferred): App Store Connect API key
 #   ASC_KEY_ID="..."  ASC_ISSUER_ID="..."  ASC_KEY_PATH="~/.appstoreconnect/private_keys/AuthKey_....p8"
@@ -88,49 +92,82 @@ OUT="$SCRIPT_OUT"
 APPDIR="$SCRIPT_APPDIR"
 VER="$SCRIPT_VER"
 [[ -n "$REQUESTED_SIGN_IDENTITY" ]] && SIGN_IDENTITY="$REQUESTED_SIGN_IDENTITY"
+RELEASE_DESKTOP_PROFILE="${DESKTOP_PROFILE:-}"
 # ~/.pocket-release.env is a SHARED file across projects (also used by the
 # pocketagent iOS release lane, which sets its own PROFILE="Pocket iOS
 # AppStore" for a completely different app). If this script's caller didn't
 # explicitly pass PROFILE, don't let a same-named var leaked in from sourcing
-# that shared file silently hijack the desktop app's provisioning profile —
-# reset to empty so the desktop-specific default below (line ~93) applies.
-PROFILE="$REQUESTED_PROFILE"
+# that shared file silently hijack the desktop app's provisioning profile.
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # re-resolve in case the env file set it
 TEAM_ID="${TEAM_ID:-4F8B93R3SH}"
 
-# Embed the provisioning profile (real-signed builds only). Point PROFILE at a
-# .provisionprofile, or leave the default to auto-pick the installed
-# "Pocket Agent Desktop Mac Dev" profile by its known UUID.
-PROFILE="${PROFILE:-$HOME/Library/MobileDevice/Provisioning Profiles/bcd619b6-c187-49d5-8e53-085e02a79f79.provisionprofile}"
+# Embed a matching provisioning profile for every real-signed build. PROFILE on
+# the command line wins. DESKTOP_PROFILE is the release-env-safe setting because
+# the shared PROFILE variable belongs to the iOS release lane.
+DEV_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/bcd619b6-c187-49d5-8e53-085e02a79f79.provisionprofile"
+DEVELOPER_ID_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/pocket-desktop-developer-id.provisionprofile"
+if [[ -n "$REQUESTED_PROFILE" ]]; then
+  PROFILE="$REQUESTED_PROFILE"
+elif [[ -n "$REQUESTED_DESKTOP_PROFILE" ]]; then
+  PROFILE="$REQUESTED_DESKTOP_PROFILE"
+elif [[ "$NOTARIZE" == "1" ]]; then
+  PROFILE="${RELEASE_DESKTOP_PROFILE:-$DEVELOPER_ID_PROFILE}"
+else
+  PROFILE="$DEV_PROFILE"
+fi
+PROFILE="${PROFILE/#\~/$HOME}"
+
 SIGN_ENTITLEMENTS=""
-# Development builds embed a provisioning profile + derive get-task-allow entitlements.
-# The Developer ID / notarization path (NOTARIZE=1) must NOT: notarized apps ship with
-# a hardened runtime and no get-task-allow, and Developer ID needs no embedded profile.
-if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
+# Development and Developer ID builds both embed a profile when they claim
+# restricted capabilities. Only Development receives get-task-allow.
+if [[ "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
   echo "▸ embed provisioning profile: $(basename "$PROFILE")"
   cp "$PROFILE" "$APPDIR/Contents/embedded.provisionprofile"
-  # A provisioned app must be signed with the profile's full entitlement set
-  # (application-identifier, team-identifier, keychain-access-groups, applesignin)
-  # or amfid refuses to launch it (Launchd job spawn failed / error 163). Derive
-  # them straight from the profile and add get-task-allow for a Development build.
   DERIVED="$OUT/derived.entitlements"
-  security cms -D -i "$PROFILE" > "$OUT/profile.plist"
-  /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$OUT/profile.plist" > "$DERIVED"
-  /usr/libexec/PlistBuddy -c 'Add :com.apple.security.get-task-allow bool true' "$DERIVED" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c 'Set :com.apple.security.get-task-allow true' "$DERIVED"
+  PROFILE_PLIST="$OUT/profile.plist"
+  security cms -D -i "$PROFILE" > "$PROFILE_PLIST"
+  PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")
+  PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST")
+  EXPECTED_APP_ID="${TEAM_ID}.com.pocketagent.desktop"
+  if [[ "$PROFILE_APP_ID" != "$EXPECTED_APP_ID" ]]; then
+    echo "✗ provisioning profile App ID 不符：$PROFILE_APP_ID（預期 $EXPECTED_APP_ID）" >&2
+    exit 1
+  fi
+
+  PROVISIONS_ALL_DEVICES=$(/usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$PROFILE_PLIST" 2>/dev/null || true)
+  if [[ "$NOTARIZE" == "1" && "$PROVISIONS_ALL_DEVICES" != "true" ]]; then
+    echo "✗ NOTARIZE=1 必須使用 Developer ID provisioning profile；目前是：$PROFILE_NAME" >&2
+    exit 1
+  fi
+  if [[ "$NOTARIZE" == "1" ]]; then
+    PROFILE_CLOUD_CONTAINER=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-identifiers:0' "$PROFILE_PLIST" 2>/dev/null || true)
+    PROFILE_CLOUD_ENV=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-environment' "$PROFILE_PLIST" 2>/dev/null || true)
+    if [[ "$PROFILE_CLOUD_CONTAINER" != "iCloud.com.pocketagent" || "$PROFILE_CLOUD_ENV" != "Production" ]]; then
+      echo "✗ Developer ID profile 缺少 iCloud.com.pocketagent / Production CloudKit 授權" >&2
+      exit 1
+    fi
+  fi
+
+  /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$PROFILE_PLIST" > "$DERIVED"
+  if [[ "$NOTARIZE" != "1" ]]; then
+    /usr/libexec/PlistBuddy -c 'Add :com.apple.security.get-task-allow bool true' "$DERIVED" 2>/dev/null \
+      || /usr/libexec/PlistBuddy -c 'Set :com.apple.security.get-task-allow true' "$DERIVED"
+  fi
+
   # A provisioning profile hands CloudKit entitlements back in wildcard forms
   # that CKContainer rejects at launch with CKException("malformed entitlements"):
   #   · icloud-services arrives as the string "*" — must be an array of strings
   #     (["CloudKit"]).
-  #   · icloud-container-environment arrives as an array [Production, Development]
-  #     — must be a single string; a Development-signed build wants "Development".
+  #   · a Development profile returns [Production, Development] for the container
+  #     environment — its signed entitlement must be the single string Development.
+  #     A Developer ID profile already returns the single string Production.
   # Coerce both, or the app SIGABRTs during applicationDidFinishLaunching.
   if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-services' "$DERIVED" >/dev/null 2>&1; then
     /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.icloud-services' "$DERIVED"
     /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-services array' "$DERIVED"
     /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-services:0 string CloudKit' "$DERIVED"
   fi
-  if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-environment' "$DERIVED" >/dev/null 2>&1; then
+  if [[ "$NOTARIZE" != "1" ]] && /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-environment' "$DERIVED" >/dev/null 2>&1; then
     /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.icloud-container-environment' "$DERIVED"
     /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.icloud-container-environment string Development' "$DERIVED"
   fi
@@ -147,15 +184,16 @@ if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" != "-" && -f "$PROFILE" ]]; then
     /usr/libexec/PlistBuddy -c "Set :com.apple.developer.ubiquity-kvstore-identifier ${TEAM_ID}.com.pocketagent.desktop" "$DERIVED"
   fi
   SIGN_ENTITLEMENTS="$DERIVED"
-  echo "  entitlements: derived from profile (+ get-task-allow, CloudKit-coerced)"
-elif [[ "$SIGN_IDENTITY" != "-" ]]; then
   if [[ "$NOTARIZE" == "1" ]]; then
-    echo "  Developer ID notarization: signing without development-only Apple/iCloud entitlements"
-    echo "  ⚠ 未嵌入 Developer ID provisioning profile — Sign in with Apple / CloudKit 會停用"
+    echo "  profile: $PROFILE_NAME (Developer ID, Production CloudKit)"
+    echo "  注意：Apple 不允許 Developer ID profile 使用原生 Sign in with Apple entitlement"
   else
-    echo "  ⚠ 找不到 provisioning profile ($PROFILE) — Sign in with Apple 可能無法運作"
-    SIGN_ENTITLEMENTS="$ENTITLEMENTS"
+    echo "  profile: $PROFILE_NAME (Development + get-task-allow)"
   fi
+elif [[ "$SIGN_IDENTITY" != "-" ]]; then
+  echo "✗ 找不到 provisioning profile：$PROFILE" >&2
+  echo "  請安裝對應 profile，或用 PROFILE / DESKTOP_PROFILE 指定路徑。" >&2
+  exit 1
 fi
 
 # Hardened runtime is REQUIRED for notarization; only add it on the Developer ID
@@ -168,21 +206,23 @@ if [[ -x "$APPDIR/Contents/Resources/cloudflared" ]]; then
   # Must use the same CODESIGN_OPTS as the main app (incl. --options runtime on
   # the notarize path) — notarytool rejects the whole archive if ANY embedded
   # executable lacks the hardened runtime, even if the app itself has it.
-  codesign "${CODESIGN_OPTS[@]}" --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared" \
-    || echo "  (helper codesign failed — continuing; app may still run if helper is already signed)"
+  codesign "${CODESIGN_OPTS[@]}" --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared"
 fi
 
-echo "▸ codesign (identity: $SIGN_IDENTITY${NOTARIZE:+, hardened runtime})"
+if [[ "$NOTARIZE" == "1" ]]; then
+  echo "▸ codesign (identity: $SIGN_IDENTITY, hardened runtime)"
+else
+  echo "▸ codesign (identity: $SIGN_IDENTITY)"
+fi
 if [[ -n "$SIGN_ENTITLEMENTS" ]]; then
   codesign "${CODESIGN_OPTS[@]}" \
     --entitlements "$SIGN_ENTITLEMENTS" \
-    --sign "$SIGN_IDENTITY" "$APPDIR" \
-    || echo "  (codesign failed — app may not pass verification)"
+    --sign "$SIGN_IDENTITY" "$APPDIR"
 else
   codesign "${CODESIGN_OPTS[@]}" \
-    --sign "$SIGN_IDENTITY" "$APPDIR" \
-    || echo "  (codesign failed — app may not pass verification)"
+    --sign "$SIGN_IDENTITY" "$APPDIR"
 fi
+codesign --verify --deep --strict --verbose=2 "$APPDIR"
 
 echo "▸ create .dmg"
 DMG="$OUT/Pocket-$VER.dmg"

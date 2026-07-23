@@ -29,26 +29,27 @@
   → `build_dmg.sh` → 上傳 `.dmg` 成 GitHub Release。本機出版本用
   `packaging/cut_release.sh <ver|patch|minor|major>`。
 
-## Sign in with Apple — 正式簽章設定(已就緒)
+## Sign in with Apple — Development 簽章設定
 Bundle id 為 **`com.pocketagent.desktop`**(Team `4F8B93R3SH`)。正式登入需要用真實憑證
 + provisioning profile 簽章,以下已在善彰帳號建好:
 - **App ID** `com.pocketagent.desktop`(ASC id `6SUL2W23HK`),已啟用 **Sign in with
   Apple** capability(primary app consent)。
-- **Mac Development profile** 「Pocket Agent Desktop Mac Dev」
-  (uuid `22403cda-d674-4ba6-8a2b-0e5ea908ce06`),綁本機裝置 + 開發憑證,已裝到
+- **Mac Development profile** 「Pocket Agent Desktop Mac Dev」,綁本機裝置 + 開發憑證,已裝到
   `~/Library/MobileDevice/Provisioning Profiles/`。
 - **憑證**:`Apple Development: Created via API`(本機指紋
   `F0685308…`)。簽章用:
   ```bash
   SIGN_IDENTITY="F0685308E5B7BDADBA007D2D4DF773E117FFDC9D" ./packaging/build_dmg.sh
   ```
-  `build_dmg.sh` 會把上述 profile 嵌入 `Contents/embedded.provisionprofile` 並用
-  `packaging/PocketConnect.entitlements`(`com.apple.developer.applesignin`)簽。
+  `build_dmg.sh` 會把上述 profile 嵌入 `Contents/embedded.provisionprofile`，並直接從
+  profile 派生 Apple 核准的 entitlements。
 - **audience**:bridge 的 `APPLE_ID_AUDIENCES` 已含 `com.pocketagent.ios` 與
   `com.pocketagent.desktop`(見 `~/Library/LaunchAgents/ai.studio.hermes-bridge.plist`)。
 
-> ⚠️ 這是 **Development** 簽章(本機/註冊裝置可跑真實 Apple 登入)。對外散佈仍需
-> Developer ID + 公證(獨立待辦)。
+> Development 簽章可在註冊裝置跑原生 Apple 登入。對外 `.dmg` 使用 Developer ID
+> + 公證，並以 Developer ID profile 啟用 Production CloudKit；依 Apple 的 macOS
+> capability matrix，Developer ID 不支援原生 Sign in with Apple entitlement，公開版
+> 必須改走 Web Sign in with Apple，或改由 Mac App Store 發行原生登入版本。
 
 ## 結構
 ```
@@ -79,11 +80,13 @@ swift run            # 直接跑(選單列會出現 P 圖示)
 ## 下一步(待辦)
 - [x] **首次設定 / 引導**:首次啟動引導(M1)已做,`Config` 仍寫死預設值,尚未做設定頁。
 - [x] **配對 QR**:已做「配對這台桌機」帳號綁定一次性 code QR(M1)。
-- [ ] **Sign in with Apple 正式簽章**:見上方卡點,需 Team ID + entitlement + bridge audience。
+- [ ] **公開版 Apple 登入**:Developer ID 不支援原生 entitlement；需實作 Web Sign in
+  with Apple callback，或改走 Mac App Store 發行。
 - [ ] **Bundling deps**:把 `cloudflared`(必要時連 bridge runtime)打包進 `Contents/Resources`,使用者不用先裝任何東西(腳本內已留註解位置)。
 - [ ] **登入自啟**:`SMAppService`(Login Item),讓服務開機常駐。
 - [ ] **連上自動開好 Hermes(商業)**:啟動時拉起 personas + 連接器。
-- [ ] **簽章 & 公證(Signing & notarization)**:用 Developer ID 憑證簽 + `notarytool` 公證,使用者開啟才不被 Gatekeeper 擋。目前是 ad-hoc 簽(本機可跑,散佈會被擋)。
+- [x] **簽章 & 公證(Signing & notarization)**:Developer ID 憑證 + 正式 CloudKit
+  provisioning profile + `notarytool` 公證流程已接通。
 - [ ] **狀態列圖示**:換成 P logo(`Contents/Resources/AppIcon.icns` + template image)。
 
 ## 商業化定位
