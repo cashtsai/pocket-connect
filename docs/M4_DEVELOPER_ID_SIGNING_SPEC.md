@@ -91,13 +91,15 @@ runtime，不能放進 DMG，也不要與發行憑證混用。
   callback 不會把公開使用者寫進 CashCamp 的帳號資料庫。
 - Development / Mac App Store 簽章仍保留原生 `ASAuthorizationController`。
 
-Apple Developer Portal 還需完成：
+Apple Developer Portal 已於 2026-07-23 完成：
 
 - Services ID：`com.pocketagent.web`
 - Domain：`pocket.tsai.cash`
 - Return URL：`https://pocket.tsai.cash/app/v1/auth/apple/web/callback`
-- 建立 Sign in with Apple private key，綁定 primary App ID
-  `com.pocketagent.desktop`
+- Primary App ID：`com.pocketagent.desktop`
+- Sign in with Apple key：`Pocket Web Sign In`，Key ID `QD9D22NS7C`
+- 本機 key：`~/.pocket-release-secrets/apple-signin/AuthKey_QD9D22NS7C.p8`
+  （目錄 `0700`、檔案 `0600`，不進 git）
 
 ---
 
@@ -108,7 +110,7 @@ Apple Developer Portal 還需完成：
 | 全新未註冊 Mac 安裝 | 雙擊 `.dmg` 開啟，Gatekeeper 不擋（或只需一次「打開」確認，無「無法確認開發者」錯誤）|
 | `spctl` 檢查 | `spctl -a -vvv /Applications/Pocket.app` 回傳 `accepted`，`source=Notarized Developer ID` |
 | Production CloudKit | 簽章含 `iCloud.com.pocketagent`，環境為 `Production` |
-| 公開版 Apple 登入 | Portal 與 Bridge secrets 設定後，瀏覽器完成登入並由 Pocket 取回 session |
+| 公開版 Apple 登入 | Bridge runtime 設定後，瀏覽器完成登入並由 Pocket 取回本機 session |
 | CI 自動化 | push tag 後 GitHub Actions 自動出「已公證」的 `.dmg`，不需手動本機跑 |
 
 ---
@@ -118,8 +120,8 @@ Apple Developer Portal 還需完成：
 | 線 | 工作 |
 |---|---|
 | 善彰 | Developer ID 憑證與正式 profile 已建立；保管 `.p12` 備份密碼 |
-| XCash | `.p12` 已放安全位置（不進 git）；完成 Apple Portal 登入 / 2FA |
-| Codex | 本機簽章、公證、Web 登入程式與 CI workflow 已完成；待補 secrets 與正式驗收 |
+| XCash | `.p12` 與 SIWA `.p8` 已放安全位置（不進 git） |
+| Codex | Portal、程式與 CI workflow 已完成；待授權合併／重啟、補 GitHub secrets 與正式驗收 |
 
 ---
 
@@ -127,6 +129,7 @@ Apple Developer Portal 還需完成：
 
 - GitHub Actions 尚未放入 Developer ID `.p12`、profile 與公證 API key secrets，因此
   tag release 仍不可視為正式發行來源。
-- Apple Portal 尚未建立 Services ID / Return URL / Sign in with Apple key，Bridge
-  runtime 環境也尚未注入該 key。
-- 完成以上設定後，才進行公開 DMG 端到端登入與全新 Mac 安裝驗收。
+- Bridge 功能分支尚未獲准合併／重啟，runtime 環境也尚未注入 Services ID、Key ID
+  與 `.p8` 路徑。
+- GitHub CLI 需要重新登入，且 `.p12` 匯出密碼仍需確認，才能補齊 Actions secrets。
+- 完成部署後，再進行公開 DMG 端到端登入與全新 Mac 安裝驗收。
