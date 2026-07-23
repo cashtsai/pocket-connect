@@ -124,6 +124,32 @@ public enum AgentCLIProbe {
         return .connected(account: parts.isEmpty ? nil : parts.joined(separator: " · "))
     }
 
+    /// Claude Code 2.1.207 can show a valid `/status` login while
+    /// `claude auth status` still returns `loggedIn:false`. In that case the
+    /// non-secret profile lives in `~/.claude.json.oauthAccount`; use it only as
+    /// a display fallback. This deliberately does not read or move credentials.
+    public static func claudeOAuthProfileStatus(home: String) -> AgentConnectionState? {
+        let url = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return parseClaudeOAuthProfile(data)
+    }
+
+    static func parseClaudeOAuthProfile(_ data: Data) -> AgentConnectionState? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let account = root["oauthAccount"] as? [String: Any],
+              !account.isEmpty
+        else { return nil }
+
+        var parts: [String] = []
+        if let email = account["emailAddress"] as? String, !email.isEmpty { parts.append(email) }
+        if let plan = account["seatTier"] as? String, !plan.isEmpty {
+            parts.append(plan)
+        } else if let billing = account["billingType"] as? String, !billing.isEmpty {
+            parts.append(billing)
+        }
+        return .connected(account: parts.isEmpty ? nil : parts.joined(separator: " · "))
+    }
+
     static func parseCodexLoginStatus(exitCode: Int32, output: String) -> AgentConnectionState {
         // 登入:"Logged in using ChatGPT" exit 0;未登入:"Not logged in" exit 1。
         let text = output.trimmingCharacters(in: .whitespacesAndNewlines)

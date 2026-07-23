@@ -9,17 +9,20 @@
 - **`relay/`** — 對外通道參考。用 `cloudflared` 把本機 bridge 對外；MVP 用它驗證直通。
   App 免費模式已內建自動臨時 tunnel，這個目錄是固定網址（進階）的參考。
 
-## 現況（2026-07-07）
-- ✅ **桌面 App v0.1**：品牌化控制台、Apple 登入、配對 QR、裝置清單/解除。
+## 現況（2026-07-23）
+- ✅ **桌面 App v0.2**：品牌化控制台、Apple 登入、配對 QR、裝置清單/解除。
 - ✅ **免費零設定連線**：桌面自動開 cloudflared 臨時 tunnel、掛掉自動重啟、網址經
   CloudKit 傳手機；免費模式強制開 iCloud。進階可填自己的固定網址。
-- ✅ **打包**：`build_dmg.sh` 出簽章 `.dmg`（含打包 cloudflared）；`cut_release.sh` +
-  GitHub Actions 出 Release。
-- ⏳ **公開發佈**：Developer ID 簽章 + 公證（現為 Development 簽章；別台 Mac 需右鍵→打開）。
+- ✅ **公開發佈底盤**：`build_dmg.sh` 已能產出內含 cloudflared、Developer ID 簽章、
+  Apple 公證與 stapled ticket 的 `.dmg`；Production CloudKit 與公開版 Web Sign in
+  with Apple 已部署。
+- ⏳ **自動 Release**：GitHub Actions 正式 workflow 已完成，待補齊 repo Actions
+  secrets 後即可由 tag 自動產出公證 DMG。
   見 [`docs/M4_DEVELOPER_ID_SIGNING_SPEC.md`](docs/M4_DEVELOPER_ID_SIGNING_SPEC.md)。
 
 ## 安裝
-下載 `.dmg` → 拖進 Applications → 打開（第一次右鍵→打開繞 Gatekeeper）→ 選單列出現口袋圖示。
+下載正式 `.dmg` → 拖進 Applications → 打開 → 選單列出現口袋圖示。正式版已通過
+Developer ID 與 Apple 公證，不需要以右鍵繞過「無法確認開發者」警告。
 完整步驟、免費模式為何要開 iCloud、配對、常見狀況：**[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**。
 
 ## 開發 / 打包
@@ -27,6 +30,7 @@
 cd mac-app
 swift run                          # 直接跑（選單列出現口袋圖示）
 ./packaging/build_dmg.sh           # 產出 build/Pocket-<版本>.dmg（ad-hoc 簽）
+NOTARIZE=1 ./packaging/build_dmg.sh # Developer ID 正式簽章、公證、staple
 ./packaging/cut_release.sh patch   # bump 版號 → tag → CI 出 Release
 ```
 更多結構與簽章細節見 [`mac-app/README.md`](mac-app/README.md)。

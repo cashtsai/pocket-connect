@@ -62,7 +62,11 @@ final class AgentConnectModel: ObservableObject {
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Self.runCLI(path: path, arguments: cli.statusArguments)
-            let state = AgentCLIProbe.parseStatus(for: cli, exitCode: result.exitCode, output: result.output)
+            var state = AgentCLIProbe.parseStatus(for: cli, exitCode: result.exitCode, output: result.output)
+            if cli == .claude, case .notLoggedIn = state,
+               let fallback = AgentCLIProbe.claudeOAuthProfileStatus(home: NSHomeDirectory()) {
+                state = fallback
+            }
             DispatchQueue.main.async { self?.apply(state, to: cli) }
         }
     }

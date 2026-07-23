@@ -52,8 +52,29 @@ struct BridgeError: Error, CustomStringConvertible {
 
 struct AppleAuthResult {
     let sessionToken: String
-    let expiresAt: String?
+    let expiresAt: TimeInterval?
     let displayName: String?
+}
+
+struct AppleWebAuthAttempt {
+    let flowID: String
+    let pollSecret: String
+    let authorizationURL: URL
+    let expiresAt: Date
+    let pollInterval: TimeInterval
+}
+
+struct AppleWebIdentity {
+    let appleUserID: String
+    let identityToken: String
+    let displayName: String?
+    let email: String?
+}
+
+enum AppleWebAuthStatus {
+    case pending
+    case complete(AppleWebIdentity)
+    case failed(String)
 }
 
 struct PairCode {
@@ -89,17 +110,108 @@ final class BridgeClient {
             switch result {
             case .failure(let e): completion(.failure(e))
             case .success(let json):
-                guard let session = json["session"] as? [String: Any],
-                      let token = session["token"] as? String, !token.isEmpty else {
-                    return completion(.failure(BridgeError(message: "回應缺少 session.token")))
-                }
-                let user = json["user"] as? [String: Any]
-                completion(.success(AppleAuthResult(
-                    sessionToken: token,
-                    expiresAt: session["expires_at"] as? String,
-                    displayName: user?["display_name"] as? String)))
+                completion(Self.appleAuthResult(from: json))
             }
         }
+    }
+
+    // Developer ID builds cannot carry the native Sign in with Apple
+    // entitlement, so they use Apple's web flow through the fixed-domain broker.
+    func startWebAppleAuth(
+        completion: @escaping (Result<AppleWebAuthAttempt, Error>) -> Void
+    ) {
+        post(
+            path: "/app/v1/auth/apple/web/start",
+            body: [:],
+            headers: [:]
+        ) { result in
+            switch result {
+            case .failure(let error):
+                completion(.failure(error))
+            case .success(let json):
+                guard let flowID = json["flow_id"] as? String, !flowID.isEmpty,
+                      let pollSecret = json["poll_secret"] as? String, !pollSecret.isEmpty,
+                      let rawURL = json["authorization_url"] as? String,
+                      let authorizationURL = URL(string: rawURL),
+                      authorizationURL.scheme == "https",
+                      let expiresAt = Self.number(json["expires_at"])
+                else {
+                    return completion(.failure(BridgeError(message: "登入服務回應格式不完整")))
+                }
+                let interval = max(1, min(5, Self.number(json["poll_interval"]) ?? 2))
+                completion(.success(AppleWebAuthAttempt(
+                    flowID: flowID,
+                    pollSecret: pollSecret,
+                    authorizationURL: authorizationURL,
+                    expiresAt: Date(timeIntervalSince1970: expiresAt),
+                    pollInterval: interval
+                )))
+            }
+        }
+    }
+
+    func pollWebAppleAuth(
+        _ attempt: AppleWebAuthAttempt,
+        completion: @escaping (Result<AppleWebAuthStatus, Error>) -> Void
+    ) {
+        post(
+            path: "/app/v1/auth/apple/web/status",
+            body: ["flow_id": attempt.flowID, "poll_secret": attempt.pollSecret],
+            headers: [:]
+        ) { result in
+            switch result {
+            case .failure(let error):
+                completion(.failure(error))
+            case .success(let json):
+                switch json["status"] as? String {
+                case "pending", "processing":
+                    completion(.success(.pending))
+                case "complete":
+                    guard let identity = json["identity"] as? [String: Any],
+                          let appleUserID = identity["apple_user_id"] as? String,
+                          !appleUserID.isEmpty,
+                          let identityToken = identity["identity_token"] as? String,
+                          !identityToken.isEmpty else {
+                        return completion(.failure(
+                            BridgeError(message: "登入服務回應缺少 Apple identity proof")
+                        ))
+                    }
+                    completion(.success(.complete(AppleWebIdentity(
+                        appleUserID: appleUserID,
+                        identityToken: identityToken,
+                        displayName: identity["display_name"] as? String,
+                        email: identity["email"] as? String
+                    ))))
+                case "cancelled":
+                    completion(.success(.failed("已取消 Apple 登入")))
+                case "failed":
+                    completion(.success(.failed("Apple 登入驗證失敗,請重新嘗試。")))
+                default:
+                    completion(.failure(BridgeError(message: "登入服務回應了未知狀態")))
+                }
+            }
+        }
+    }
+
+    private static func appleAuthResult(
+        from json: [String: Any]
+    ) -> Result<AppleAuthResult, Error> {
+        guard let session = json["session"] as? [String: Any],
+              let token = session["token"] as? String, !token.isEmpty else {
+            return .failure(BridgeError(message: "回應缺少 session.token"))
+        }
+        let user = json["user"] as? [String: Any]
+        return .success(AppleAuthResult(
+            sessionToken: token,
+            expiresAt: number(session["expires_at"]),
+            displayName: user?["display_name"] as? String
+        ))
+    }
+
+    private static func number(_ value: Any?) -> TimeInterval? {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? String { return TimeInterval(string) }
+        return nil
     }
 
     // POST /app/v1/pair/new — needs BOTH the bridge bearer and the account session.

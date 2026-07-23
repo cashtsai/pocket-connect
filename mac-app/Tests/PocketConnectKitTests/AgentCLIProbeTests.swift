@@ -51,6 +51,24 @@ final class AgentCLIProbeTests: XCTestCase {
                        .connected(account: "a@b.c"))
     }
 
+    func testClaudeOAuthProfileFallback() throws {
+        let data = """
+        {
+          "oauthAccount": {
+            "emailAddress": "cash@example.com",
+            "seatTier": "max"
+          }
+        }
+        """.data(using: .utf8)!
+        XCTAssertEqual(AgentCLIProbe.parseClaudeOAuthProfile(data),
+                       .connected(account: "cash@example.com · max"))
+    }
+
+    func testClaudeOAuthProfileFallbackMissingProfile() throws {
+        let data = #"{"projects": {}}"#.data(using: .utf8)!
+        XCTAssertNil(AgentCLIProbe.parseClaudeOAuthProfile(data))
+    }
+
     // MARK: codex login status(純文字)
 
     func testCodexLoggedIn() {
