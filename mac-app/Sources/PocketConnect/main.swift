@@ -187,6 +187,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             presentOnboarding()
         }
 
+        // 開發/自動化驗證用:POCKET_SHOW_DASHBOARD=1 啟動即開控制台
+        // (menu-bar app 沒視窗,UI 驗證不用再手點選單)。
+        if ProcessInfo.processInfo.environment["POCKET_SHOW_DASHBOARD"] == "1" {
+            DispatchQueue.main.async { [weak self] in self?.showDashboard() }
+        }
+
         // CloudKit discovery (M2a) — self-gating: silently off on builds
         // without the iCloud entitlement or when no iCloud account is present.
         setupCloudSync()

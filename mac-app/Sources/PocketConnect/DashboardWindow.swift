@@ -12,8 +12,8 @@ import SwiftUI
 //   • 「服務開關」已移除：bridge 由 launchd 管理，app 不是真正的啟動者，
 //     那顆按鈕只會誤導/搶 port。診斷/重新整理也移除（列表 30 秒自動更新）。
 
-// MARK: - SwiftUI 品牌色
-private enum Brand {
+// MARK: - SwiftUI 品牌色(AgentConnect.swift 也用)
+enum Brand {
     static func c(_ hex: UInt32) -> Color {
         Color(.sRGB, red: Double((hex >> 16) & 0xFF) / 255,
               green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
@@ -85,6 +85,9 @@ final class DashboardViewModel: ObservableObject {
     @Published var pairingStatus = ""
     @Published var pairingExpired = false
 
+    /// AI 引擎(Claude Code / Codex)一鍵連接 — 見 AgentConnect.swift。
+    let agents = AgentConnectModel()
+
     private weak var appDelegate: AppDelegate?
     private var pairCoordinator: PairingCoordinator?
     private var pairPollTimer: Timer?
@@ -106,6 +109,7 @@ final class DashboardViewModel: ObservableObject {
             self?.bridgeLatencyMs = ms
         }
         loadDevices()
+        agents.refreshAll()
     }
 
     func loadDevices() {
@@ -281,6 +285,7 @@ struct DashboardView: View {
                     wordmarkHeader
                     card { pairingSection }
                     card { connectionSection }
+                    card { AgentEnginesSection(model: model.agents) }
                     card { connectionSettingsSection }
                     card { devicesSection }
                 }
