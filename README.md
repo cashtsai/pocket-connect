@@ -16,8 +16,9 @@
 - ✅ **公開發佈底盤**：`build_dmg.sh` 已能產出內含 cloudflared、Developer ID 簽章、
   Apple 公證與 stapled ticket 的 `.dmg`；Production CloudKit 與公開版 Web Sign in
   with Apple 已部署。
-- ⏳ **自動 Release**：GitHub Actions 正式 workflow 已完成，待補齊 repo Actions
-  secrets 後即可由 tag 自動產出公證 DMG。
+- ✅ **自動 Release**：`v0.2` 已由 GitHub Actions 在乾淨的 macOS runner 完成測試、
+  Developer ID 簽章、Apple 公證、staple 與 Release 發布。
+  [下載 Pocket-0.2.dmg](https://github.com/cashtsai/pocket-connect/releases/tag/v0.2)
   見 [`docs/M4_DEVELOPER_ID_SIGNING_SPEC.md`](docs/M4_DEVELOPER_ID_SIGNING_SPEC.md)。
 
 ## 安裝
