@@ -5,7 +5,10 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      # Info.plist currently uses the two-component version "0.2". The
+      # verification step below still rejects any tag that is not exactly
+      # "v${CFBundleShortVersionString}".
+      - "v*"
 
 permissions:
   contents: write
