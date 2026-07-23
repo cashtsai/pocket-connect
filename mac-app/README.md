@@ -86,7 +86,8 @@ swift run            # 直接跑(選單列會出現 P 圖示)
 - [x] **配對 QR**:已做「配對這台桌機」帳號綁定一次性 code QR(M1)。
 - [x] **公開版 Apple 登入底盤**:Developer ID 自動走瀏覽器 callback + 本機輪詢；
   Apple Portal Services ID / key、固定網域 broker 與 Bridge runtime secrets 已部署，
-  自動化驗收通過，待真人 Apple Account 完成最後端到端登入確認。
+  真人 Apple Account 的 callback、一次性 proof、Bridge 驗簽與 account session
+  建立已完成端到端驗收。
 - [x] **Bundling cloudflared**:`build_dmg.sh` 會把 Homebrew 的實體 binary 打包進
   `Contents/Resources` 並一起簽章。
 - [ ] **Bundling bridge runtime**:全新使用者仍需要 bridge runtime 安裝／啟動方案。

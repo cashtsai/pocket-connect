@@ -106,7 +106,10 @@ Apple Developer Portal 已於 2026-07-23 完成：
 
 - Bridge `main` 已部署並推送至 GitHub（merge head `f26c002`）；production LaunchAgent
   已注入 Services ID、return URL、Team ID、Key ID 與 mode-600 `.p8` 路徑。
-- Pocket 分支 `feat/one-click-agent-connect` 已推送至 GitHub（head `5bcdd60`）。
+- Pocket 公開版已透過 PR
+  [#12](https://github.com/cashtsai/pocket-connect/pull/12) 與
+  [#13](https://github.com/cashtsai/pocket-connect/pull/13) 合併至 `main`
+  （release merge head `f0ca5ca`）。
 - `NOTARIZE=1 ./packaging/build_dmg.sh` 完成；Apple notarization submission ID：
   `b9cd7e3e-3dc9-4e74-a03b-19b01a88a0ba`，狀態 `Accepted`。
 - 產物：`mac-app/build/Pocket-0.2.dmg`。`codesign --verify --deep --strict`、
@@ -119,6 +122,20 @@ Apple Developer Portal 已於 2026-07-23 完成：
   `/Applications/Pocket.app.pre-web-apple-20260723-103441`。
 - 安裝前後 11 個 tmux 工作 session 數量與名稱不變；只重啟 Pocket 並清除它遺留的
   3 個舊 `cloudflared` helper。
+- 真人 Apple Account Web 登入已完成：Apple callback 成功，broker 一次性 proof
+  由本機 Bridge 驗簽，成功建立並驗證 `account` session；暫存 token 隨即刪除。
+- GitHub Actions 六個 release secrets 已建立。CI 專用 Developer ID P12 位於
+  `~/.pocket-release-secrets/developerid-application-ci.p12`（`0600`），隨機密碼只存
+  macOS Keychain；以臨時 keychain 模擬 runner 匯入成功。
+- `v0.2` workflow
+  [run 29981075083](https://github.com/cashtsai/pocket-connect/actions/runs/29981075083)
+  在 2 分 12 秒內完成測試、簽章、公證、staple、Gatekeeper 驗收與
+  [GitHub Release](https://github.com/cashtsai/pocket-connect/releases/tag/v0.2)。
+  發布 DMG SHA-256：
+  `751375a494fb74c04acc586b291601397b74e93d54be7a5d5f17c382f0f85c0a`。
+- 從 GitHub Release 重新下載的 DMG 已獨立通過 checksum、`stapler validate`、
+  `codesign --verify --deep --strict`、`spctl` 與 Production CloudKit entitlement
+  驗收。
 
 ---
 
@@ -140,15 +157,14 @@ Apple Developer Portal 已於 2026-07-23 完成：
 |---|---|
 | 善彰 | Developer ID 憑證與正式 profile 已建立；保管 `.p12` 備份密碼 |
 | XCash | `.p12` 與 SIWA `.p8` 已放安全位置（不進 git） |
-| Codex | Portal、程式、Bridge production、正式公證與安裝已完成；補 GitHub secrets 與真人登入驗收中 |
+| Codex | Portal、程式、Bridge production、真人 Apple 登入、GitHub CI 公證發行與成品回下載驗收均已完成 |
 
 ---
 
-## 5. 尚待完成
+## 5. 後續驗收與發布通路
 
-- GitHub Actions 尚未放入 Developer ID `.p12`、profile 與公證 API key secrets，因此
-  tag release 仍不可視為正式發行來源。
-- GitHub CLI 需要重新登入，且 `.p12` 匯出密碼仍需確認，才能補齊 Actions secrets。
-- 以真人 Apple Account 完成公開 DMG 的 Web Sign in with Apple，確認 browser callback、
-  broker 一次性 proof 與本機 account session 全鏈路。
-- 最後再以另一台全新、未註冊開發裝置的 Mac 重跑一次安裝驗收。
+- 再以另一台全新、未註冊開發裝置的 Mac 重跑一次安裝驗收，確認沒有本機歷史狀態
+  影響首次啟動。
+- `cashtsai/pocket-connect` 目前是 private repository，因此 v0.2 Release 只對 repo
+  成員可下載。要提供一般使用者直接下載，應另設公開的 release-only repo 或正式下載站；
+  不需要公開原始碼或把簽章 secrets 搬到公開 repo。
