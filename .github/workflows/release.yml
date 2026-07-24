@@ -100,7 +100,7 @@ jobs:
           set -euo pipefail
           codesign --verify --deep --strict --verbose=2 build/Pocket.app
           spctl --assess --type execute --verbose=2 build/Pocket.app
-          DMG=$(find build -maxdepth 1 -name 'Pocket-*.dmg' -print -quit)
+          DMG=$(find build/dist -maxdepth 1 -name 'Pocket-*.dmg' -print -quit)
           test -n "$DMG"
           xcrun stapler validate "$DMG"
           shasum -a 256 "$DMG" > "${DMG}.sha256"
@@ -109,7 +109,7 @@ jobs:
         id: artifacts
         working-directory: mac-app
         run: |
-          DMG=$(find build -maxdepth 1 -name 'Pocket-*.dmg' -print -quit)
+          DMG=$(find build/dist -maxdepth 1 -name 'Pocket-*.dmg' -print -quit)
           test -n "$DMG"
           echo "dmg=mac-app/$DMG" >> "$GITHUB_OUTPUT"
           echo "checksum=mac-app/${DMG}.sha256" >> "$GITHUB_OUTPUT"
