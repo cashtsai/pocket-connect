@@ -2,7 +2,7 @@
 set -euo pipefail
 # Build Pocket.app and package it into a distributable .dmg installer.
 # Usage:  ./packaging/build_dmg.sh
-# Output: build/Pocket.app  and  build/Pocket-<ver>.dmg
+# Output: build/Pocket.app  and  build/dist/Pocket-<ver>.dmg
 cd "$(dirname "$0")/.."   # mac-app/
 
 APP="Pocket"
@@ -225,7 +225,8 @@ fi
 codesign --verify --deep --strict --verbose=2 "$APPDIR"
 
 echo "▸ create .dmg"
-DMG="$OUT/Pocket-$VER.dmg"
+DIST="$OUT/dist"; mkdir -p "$DIST"   # 發行產物統一落 build/dist/
+DMG="$DIST/Pocket-$VER.dmg"
 STAGE="$OUT/dmg"; mkdir -p "$STAGE"
 cp -R "$APPDIR" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance

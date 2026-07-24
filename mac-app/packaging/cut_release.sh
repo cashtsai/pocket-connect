@@ -54,7 +54,7 @@ buildnum=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$PLIST" 2>/dev/nu
 
 echo "▸ 本機 build 驗證"
 ./packaging/build_dmg.sh >/dev/null
-echo "  ✓ build/PocketConnect-$new.dmg"
+echo "  ✓ build/dist/Pocket-$new.dmg"
 
 git add "$PLIST"
 git commit -m "release: v$new"

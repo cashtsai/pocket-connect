@@ -21,16 +21,21 @@
   [下載 Pocket-0.2.dmg](https://github.com/cashtsai/pocket-connect/releases/tag/v0.2)
   見 [`docs/M4_DEVELOPER_ID_SIGNING_SPEC.md`](docs/M4_DEVELOPER_ID_SIGNING_SPEC.md)。
 
-## 安裝
-下載正式 `.dmg` → 拖進 Applications → 打開 → 選單列出現口袋圖示。正式版已通過
-Developer ID 與 Apple 公證，不需要以右鍵繞過「無法確認開發者」警告。
+## 下載安裝
+1. 到 [Releases](https://github.com/cashtsai/pocket-connect/releases) 下載最新的
+   `Pocket-<版本>.dmg`（可用附帶的 `.sha256` 核對）。
+2. 雙擊 `.dmg` → 把 **Pocket** 拖進 **Applications**。
+3. 從 Applications 打開 Pocket → 選單列出現口袋圖示（無 Dock 圖示）。
+
+正式 `.dmg` 已用 **Developer ID 簽章 + Apple 公證（notarized）並 staple**，任何 Mac
+雙擊即可安裝，不會出現「無法確認開發者」，也不需要右鍵繞過 Gatekeeper。
 完整步驟、免費模式為何要開 iCloud、配對、常見狀況：**[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**。
 
 ## 開發 / 打包
 ```bash
 cd mac-app
 swift run                          # 直接跑（選單列出現口袋圖示）
-./packaging/build_dmg.sh           # 產出 build/Pocket-<版本>.dmg（ad-hoc 簽）
+./packaging/build_dmg.sh           # 產出 build/dist/Pocket-<版本>.dmg（ad-hoc 簽）
 NOTARIZE=1 ./packaging/build_dmg.sh # Developer ID 正式簽章、公證、staple
 ./packaging/cut_release.sh patch   # bump 版號 → tag → CI 出 Release
 ```

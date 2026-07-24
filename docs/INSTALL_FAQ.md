@@ -97,7 +97,7 @@ Pocket 會**自動重啟**臨時 tunnel（偵測到非預期結束後幾秒內�
 
 ## 進階：自己出安裝包
 
-- 出一份本機安裝包：`cd mac-app && ./packaging/build_dmg.sh` → `build/Pocket-<版本>.dmg`。
+- 出一份本機安裝包：`cd mac-app && ./packaging/build_dmg.sh` → `build/dist/Pocket-<版本>.dmg`。
 - 出正式版本（bump 版號→tag→CI 上傳 Release）：`./packaging/cut_release.sh patch`。
 - **公開發佈（Developer ID + 公證）**：見 `docs/M4_DEVELOPER_ID_SIGNING_SPEC.md` 與
   `mac-app/packaging/pocket-release.env.example`；備好憑證後 `NOTARIZE=1 ./packaging/build_dmg.sh`。
