@@ -2,7 +2,8 @@ import AppKit
 import PocketConnectKit
 import SwiftUI
 
-// 「AI 引擎」一鍵連接 — 給不會用終端機的使用者連接 Claude Code / Codex。
+// 「連線入口」一鍵連接 — 顯示目前 Hermes/OpenClaw bridge provider,
+// 也給不會用終端機的使用者連接 Claude Code / Codex。
 //
 //   • 探測:掃 ~/.local/bin、/opt/homebrew/bin、/usr/local/bin 等常見位置
 //     (GUI app 的 PATH 沒有 shell profile,不能只靠 PATH — 見 AgentCLIProbe)。
@@ -240,12 +241,17 @@ final class AgentConnectModel: ObservableObject {
 
 struct AgentEnginesSection: View {
     @ObservedObject var model: AgentConnectModel
+    let bridgeProviderName: String
+    let bridgeReachable: Bool
+    let bridgeLatencyMs: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("AI 引擎").font(.headline).foregroundStyle(Brand.ink)
-            Text("連接你的 AI 帳號,手機那頭才有引擎可用。")
+            Text("連線入口").font(.headline).foregroundStyle(Brand.ink)
+            Text("手機會看到這三個入口:目前的 Hermes/OpenClaw、Claude、Codex。")
                 .font(.caption).foregroundStyle(.secondary)
+            bridgeProviderRow
+            Divider().opacity(0.4)
             ForEach(model.rows) { row in
                 engineRow(row)
                 if row.cli != AgentCLI.allCases.last {
@@ -253,6 +259,49 @@ struct AgentEnginesSection: View {
                 }
             }
         }
+    }
+
+    private var bridgeProviderRow: some View {
+        HStack(spacing: 10) {
+            bridgeProviderStatusIcon.frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hermes / OpenClaw").foregroundStyle(Brand.ink)
+                Text(bridgeProviderSubtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(bridgeReachable ? "已連線" : "未連線")
+                .font(.caption)
+                .foregroundStyle(bridgeReachable ? Brand.green : Brand.red)
+        }
+        .padding(.vertical, 3)
+    }
+
+    @ViewBuilder
+    private var bridgeProviderStatusIcon: some View {
+        if bridgeReachable {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 16)).foregroundStyle(Brand.green)
+        } else if bridgeProviderName == "尚未設定" {
+            Circle().fill(Brand.espresso.opacity(0.25)).frame(width: 8, height: 8)
+        } else {
+            Circle().fill(Brand.red).frame(width: 8, height: 8)
+        }
+    }
+
+    private var bridgeProviderSubtitle: String {
+        if bridgeProviderName == "尚未設定" {
+            return "尚未選擇 Hermes 或 OpenClaw"
+        }
+        var parts = ["目前使用 \(bridgeProviderName)"]
+        if bridgeReachable {
+            parts.append("bridge 已連線")
+            if let ms = bridgeLatencyMs {
+                parts.append(String(format: "%.0fms", ms))
+            }
+        } else {
+            parts.append("bridge 未連線")
+        }
+        return parts.joined(separator: " · ")
     }
 
     @ViewBuilder

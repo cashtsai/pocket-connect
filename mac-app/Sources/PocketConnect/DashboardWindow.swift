@@ -65,6 +65,7 @@ private struct PocketSky: View {
 final class DashboardViewModel: ObservableObject {
     @Published var bridgeReachable = false
     @Published var bridgeLatencyMs: Double?
+    @Published var activeBridgeProviderName = "Hermes / OpenClaw"
     @Published var connectHost = ""
     @Published var cloudStatusText = "—"
     // 連線設定（進階）
@@ -102,6 +103,7 @@ final class DashboardViewModel: ObservableObject {
         guard let appDelegate else { return }
         cloudStatusText = appDelegate.cloudStatusText
         connectHost = URL(string: appDelegate.effectiveConnectURL)?.host ?? appDelegate.effectiveConnectURL
+        activeBridgeProviderName = Self.readActiveBridgeProviderName()
         usingCustomURL = appDelegate.customConnectURL != nil
         tokenDetected = BridgeToken.read() != nil
         appDelegate.supervisor.probeLatency(appDelegate.effectiveConnectURL) { [weak self] ok, ms in
@@ -110,6 +112,29 @@ final class DashboardViewModel: ObservableObject {
         }
         loadDevices()
         agents.refreshAll()
+    }
+
+    private static func readActiveBridgeProviderName() -> String {
+        let plistPaths = [
+            "~/Library/LaunchAgents/com.pocketconnect.bridge.plist",
+            "~/Library/LaunchAgents/ai.studio.hermes-bridge.plist",
+        ].map { NSString(string: $0).expandingTildeInPath }
+        for plistPath in plistPaths {
+            guard let data = FileManager.default.contents(atPath: plistPath),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let envVars = plist["EnvironmentVariables"] as? [String: Any]
+            else { continue }
+            let raw = (envVars["POCKET_ACTIVE_PROVIDER"] as? String)
+                ?? (envVars["POCKET_PROVIDER"] as? String)
+                ?? (envVars["POCKET_DEFAULT_PROVIDER"] as? String)
+            switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "hermes": return "Hermes"
+            case "openclaw": return "OpenClaw"
+            case "none": return "尚未設定"
+            default: continue
+            }
+        }
+        return "Hermes / OpenClaw"
     }
 
     func loadDevices() {
@@ -304,7 +329,14 @@ struct DashboardView: View {
                     wordmarkHeader
                     card { pairingSection }
                     card { connectionSection }
-                    card { AgentEnginesSection(model: model.agents) }
+                    card {
+                        AgentEnginesSection(
+                            model: model.agents,
+                            bridgeProviderName: model.activeBridgeProviderName,
+                            bridgeReachable: model.bridgeReachable,
+                            bridgeLatencyMs: model.bridgeLatencyMs
+                        )
+                    }
                     card { connectionSettingsSection }
                     card { devicesSection }
                 }
