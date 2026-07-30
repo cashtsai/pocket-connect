@@ -168,6 +168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     var dashboardModel: DashboardViewModel?
     var dashboardRefreshTimer: Timer?
     private var bridgeInstallProcess: Process?
+    private var bridgeInstallOutputPipe: Pipe?
+    private var bridgeInstallerWindow: BridgeInstallerWindowController?
 
     private var isSignedIn: Bool { Keychain.loadSessionToken() != nil }
 
@@ -183,14 +185,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         supervisor.onLaunchFailure = { [weak self] message in
             self?.cloudSync?.logError(level: .error, code: "bridge_launch_failed", message: message)
         }
-        ensureBundledBridgeInstalled()
+        let bridgeInstallerPresented = presentBundledBridgeInstallerIfNeeded()
         rebuildMenu()
         // periodic reachability poll
         Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.poll() }
         poll()
 
         // First-run: show onboarding unless already completed.
-        if !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
+        if !bridgeInstallerPresented && !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
             presentOnboarding()
         }
 
@@ -216,19 +218,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         }
     }
 
-    private func ensureBundledBridgeInstalled() {
+    @discardableResult
+    private func presentBundledBridgeInstallerIfNeeded() -> Bool {
+        guard let context = bundledBridgeInstallContextIfNeeded() else { return false }
+        let controller = BridgeInstallerWindowController(
+            defaultProvider: bundledBridgeDefaultProvider(),
+            existingSummary: providerDetectionSummary(layout: context.layout)
+        )
+        controller.onStartInstall = { [weak self, weak controller] provider in
+            guard let self, let controller else { return }
+            self.runBundledBridgeInstaller(
+                bundleRoot: context.bundleRoot,
+                layout: context.layout,
+                provider: provider,
+                controller: controller
+            )
+        }
+        controller.onCloseAfterFinish = { [weak self] in
+            guard let self else { return }
+            self.bridgeInstallerWindow = nil
+            if !UserDefaults.standard.bool(forKey: self.cfg.onboardedKey) {
+                self.presentOnboarding()
+            }
+        }
+        bridgeInstallerWindow = controller
+        controller.present()
+        return true
+    }
+
+    private func bundledBridgeInstallContextIfNeeded() -> (bundleRoot: URL, layout: BridgeInstallLayout)? {
         guard let bundleRoot = Bundle.main.resourceURL?.appendingPathComponent("bridge"),
               FileManager.default.isExecutableFile(
                 atPath: bundleRoot.appendingPathComponent("deploy/install-local-bridge.sh").path
               )
-        else { return }
+        else { return nil }
 
         let layout = BridgeInstallLayout(homeDirectory: NSHomeDirectory())
         let bridgePy = layout.bridgeInstallRoot + "/bridge.py"
         let needsInstall = !FileManager.default.fileExists(atPath: layout.launchAgentPath)
             || !FileManager.default.fileExists(atPath: bridgePy)
-        guard needsInstall else { return }
+        guard needsInstall else { return nil }
 
+        return (bundleRoot, layout)
+    }
+
+    private func runBundledBridgeInstaller(
+        bundleRoot: URL,
+        layout: BridgeInstallLayout,
+        provider: BridgeProviderSelection,
+        controller: BridgeInstallerWindowController
+    ) {
         let plan = BridgeInstallPlan(
             layout: layout,
             bridgeBundleRoot: bundleRoot.path,
@@ -236,22 +275,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         )
         var installerEnvironment = plan.environment
         installerEnvironment["POCKET_DEFAULT_PROVIDER"] = bundledBridgeDefaultProvider()
+        installerEnvironment["POCKET_PROVIDER"] = provider.rawValue
         let process = Process()
         process.executableURL = URL(fileURLWithPath: plan.installScriptPath)
         process.environment = installerEnvironment
         process.currentDirectoryURL = bundleRoot
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+        outputPipe.fileHandleForReading.readabilityHandler = { [weak controller] handle in
+            let data = handle.availableData
+            guard !data.isEmpty,
+                  let chunk = String(data: data, encoding: .utf8)
+            else { return }
+            DispatchQueue.main.async {
+                for line in chunk.components(separatedBy: .newlines) {
+                    controller?.appendLog(line)
+                }
+            }
+        }
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
+                outputPipe.fileHandleForReading.readabilityHandler = nil
                 self?.bridgeInstallProcess = nil
+                self?.bridgeInstallOutputPipe = nil
                 if proc.terminationStatus != 0 {
+                    controller.markFailed("Bundled bridge installer exited \(proc.terminationStatus)。請保留畫面上的 log 方便排查。")
                     self?.cloudSync?.logError(
                         level: .error,
                         code: "bridge_install_failed",
                         message: "Bundled bridge installer exited \(proc.terminationStatus)"
                     )
+                } else {
+                    controller.markCompleted()
                 }
                 self?.poll()
             }
@@ -259,7 +316,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         do {
             try process.run()
             bridgeInstallProcess = process
+            bridgeInstallOutputPipe = outputPipe
         } catch {
+            controller.markFailed(error.localizedDescription)
             cloudSync?.logError(
                 level: .error,
                 code: "bridge_install_failed",
@@ -278,6 +337,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             return value
         default:
             return "hermes"
+        }
+    }
+
+    private func providerDetectionSummary(layout: BridgeInstallLayout) -> String {
+        let fm = FileManager.default
+        let hermesPath = layout.hermesBinCandidates.first { fm.isExecutableFile(atPath: $0) }
+        let openClawConfigured = fm.fileExists(atPath: layout.openClawConfigFile)
+
+        switch (hermesPath, openClawConfigured) {
+        case (.some(let path), true):
+            return "偵測到既有 Hermes（\(path)）與 OpenClaw 設定；選哪一個就採用哪一個，不會覆蓋。"
+        case (.some(let path), false):
+            return "偵測到既有 Hermes（\(path)）；選 Hermes 會直接採用，不會重新安裝。"
+        case (.none, true):
+            return "偵測到既有 OpenClaw 設定；選 OpenClaw 會直接採用，不會覆蓋設定。"
+        case (.none, false):
+            return "目前沒有偵測到既有 Hermes 或 OpenClaw；選 Hermes/OpenClaw 才會 fresh install。"
         }
     }
 
