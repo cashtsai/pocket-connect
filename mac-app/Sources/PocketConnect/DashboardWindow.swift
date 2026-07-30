@@ -65,6 +65,12 @@ private struct PocketSky: View {
 final class DashboardViewModel: ObservableObject {
     @Published var bridgeReachable = false
     @Published var bridgeLatencyMs: Double?
+    /// 只有「手動按刷新」才會亮 —— 定時刷新也走 refresh(),但不該讓狀態列每隔
+    /// 一段時間自己閃一下轉圈。
+    @Published var isRefreshing = false
+    /// 上次量到連線狀態的時間。少了它,使用者分不出「現在真的連得到」與
+    /// 「這是幾分鐘前的舊結果」—— 而那正是會讓人想按刷新的那個疑問。
+    @Published var lastCheckedAt: Date?
     @Published var connectHost = ""
     @Published var cloudStatusText = "—"
     // 連線設定（進階）
@@ -107,9 +113,20 @@ final class DashboardViewModel: ObservableObject {
         appDelegate.supervisor.probeLatency(appDelegate.effectiveConnectURL) { [weak self] ok, ms in
             self?.bridgeReachable = ok
             self?.bridgeLatencyMs = ms
+            self?.lastCheckedAt = Date()
+            // 轉圈收在「量到結果」這一刻,不是按下去就收 —— 收太早等於在說謊。
+            self?.isRefreshing = false
         }
         loadDevices()
         agents.refreshAll()
+    }
+
+    /// 手動刷新(狀態列右邊那顆)。與定時刷新走同一條路,差別只在會亮轉圈。
+    /// 連按多次不重複發:probe 還沒回來就直接忽略。
+    func refreshNow() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        refresh()
     }
 
     func loadDevices() {
@@ -276,6 +293,11 @@ struct DashboardView: View {
     private let relative: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated; return f
     }()
+    /// 連線狀態的量測時刻。刻意用絕對時間(時:分:秒)而不是「幾分鐘前」——
+    /// 這一列是要回答「這個數字是不是剛剛量的」,相對時間反而更模糊。
+    private static let checkedFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f
+    }()
 
     var body: some View {
         ZStack {
@@ -368,8 +390,25 @@ struct DashboardView: View {
                 Circle().fill(model.bridgeReachable ? Brand.green : Brand.red).frame(width: 8, height: 8)
                 Text(model.bridgeReachable ? "已連線" : "未連線").foregroundStyle(Brand.ink)
                 if let ms = model.bridgeLatencyMs {
-                    Text(String(format: "· %.0fms", ms)).foregroundStyle(.secondary)
+                    Text(String(format: "· %.0fms", ms))
+                        .foregroundStyle(.secondary).monospacedDigit()
                 }
+                Spacer(minLength: 8)
+                if let at = model.lastCheckedAt {
+                    Text(Self.checkedFormatter.string(from: at))
+                        .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                }
+                Button(action: { model.refreshNow() }) {
+                    if model.isRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.isRefreshing)
+                .help("重新檢查連線")
+                .accessibilityLabel("重新檢查連線")
             }
             if !model.connectHost.isEmpty {
                 Text(model.connectHost).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
