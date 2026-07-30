@@ -167,6 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     var dashboardWindow: NSWindow?
     var dashboardModel: DashboardViewModel?
     var dashboardRefreshTimer: Timer?
+    private var bridgeInstallProcess: Process?
 
     private var isSignedIn: Bool { Keychain.loadSessionToken() != nil }
 
@@ -182,6 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         supervisor.onLaunchFailure = { [weak self] message in
             self?.cloudSync?.logError(level: .error, code: "bridge_launch_failed", message: message)
         }
+        ensureBundledBridgeInstalled()
         rebuildMenu()
         // periodic reachability poll
         Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.poll() }
@@ -211,6 +213,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
                 self.onConnectURLChanged()
             }
             tunnelManager.start()
+        }
+    }
+
+    private func ensureBundledBridgeInstalled() {
+        guard let bundleRoot = Bundle.main.resourceURL?.appendingPathComponent("bridge"),
+              FileManager.default.isExecutableFile(
+                atPath: bundleRoot.appendingPathComponent("deploy/install-local-bridge.sh").path
+              )
+        else { return }
+
+        let layout = BridgeInstallLayout(homeDirectory: NSHomeDirectory())
+        let bridgePy = layout.bridgeInstallRoot + "/bridge.py"
+        let needsInstall = !FileManager.default.fileExists(atPath: layout.launchAgentPath)
+            || !FileManager.default.fileExists(atPath: bridgePy)
+        guard needsInstall else { return }
+
+        let plan = BridgeInstallPlan(
+            layout: layout,
+            bridgeBundleRoot: bundleRoot.path,
+            existingEnvironment: ProcessInfo.processInfo.environment
+        )
+        var installerEnvironment = plan.environment
+        installerEnvironment["POCKET_DEFAULT_PROVIDER"] = bundledBridgeDefaultProvider()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: plan.installScriptPath)
+        process.environment = installerEnvironment
+        process.currentDirectoryURL = bundleRoot
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                self?.bridgeInstallProcess = nil
+                if proc.terminationStatus != 0 {
+                    self?.cloudSync?.logError(
+                        level: .error,
+                        code: "bridge_install_failed",
+                        message: "Bundled bridge installer exited \(proc.terminationStatus)"
+                    )
+                }
+                self?.poll()
+            }
+        }
+        do {
+            try process.run()
+            bridgeInstallProcess = process
+        } catch {
+            cloudSync?.logError(
+                level: .error,
+                code: "bridge_install_failed",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func bundledBridgeDefaultProvider() -> String {
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("BridgeDefaultProvider"),
+              let raw = try? String(contentsOf: url, encoding: .utf8)
+        else { return "hermes" }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch value {
+        case "hermes", "openclaw", "none":
+            return value
+        default:
+            return "hermes"
         }
     }
 

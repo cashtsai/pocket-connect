@@ -9,8 +9,13 @@ import Foundation
 
 // MARK: - Bridge bearer token (ported from pocket-pair.py read_token())
 enum BridgeToken {
-    // LaunchAgent plist that carries BRIDGE_TOKEN in its EnvironmentVariables.
-    private static let plistPath = NSString(string: "~/Library/LaunchAgents/ai.studio.hermes-bridge.plist").expandingTildeInPath
+    // LaunchAgent plists that carry BRIDGE_TOKEN in EnvironmentVariables.
+    // New installs use PocketConnect's own label; legacy hand installs used
+    // ai.studio.hermes-bridge and remain readable for migration.
+    private static let plistPaths = [
+        "~/Library/LaunchAgents/com.pocketconnect.bridge.plist",
+        "~/Library/LaunchAgents/ai.studio.hermes-bridge.plist",
+    ].map { NSString(string: $0).expandingTildeInPath }
     // 使用者在「連線設定」手動貼的金鑰（自動讀不到時用）。
     private static let overrideKey = "pocketBridgeTokenOverride"
 
@@ -29,17 +34,25 @@ enum BridgeToken {
         if let env = ProcessInfo.processInfo.environment["BRIDGE_TOKEN"], !env.isEmpty {
             return sanitize(env)
         }
-        guard let data = FileManager.default.contents(atPath: plistPath),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let envVars = plist["EnvironmentVariables"] as? [String: Any],
-              let token = envVars["BRIDGE_TOKEN"] as? String
-        else { return nil }
-        return sanitize(token)
+        for plistPath in plistPaths {
+            guard let data = FileManager.default.contents(atPath: plistPath),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let envVars = plist["EnvironmentVariables"] as? [String: Any],
+                  let token = envVars["BRIDGE_TOKEN"] as? String,
+                  let sanitized = sanitize(token)
+            else { continue }
+            return sanitized
+        }
+        return nil
     }
 
     private static func sanitize(_ raw: String) -> String? {
         let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.isEmpty || t.lowercased().hasPrefix("change-me") { return nil }
+        if t.isEmpty ||
+            t.lowercased().hasPrefix("change-me") ||
+            t == "REPLACE_WITH_BRIDGE_TOKEN" {
+            return nil
+        }
         return t
     }
 }
