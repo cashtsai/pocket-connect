@@ -18,7 +18,6 @@ final class BridgeInstallerWindowController: NSWindowController, NSWindowDelegat
     var onStartInstall: ((BridgeProviderSelection) -> Void)?
     var onCloseAfterFinish: (() -> Void)?
 
-    private let defaultProvider: BridgeProviderSelection
     private var selectedProvider: BridgeProviderSelection
 
     private let titleLabel = NSTextField(labelWithString: "設定 Pocket Connect")
@@ -37,7 +36,6 @@ final class BridgeInstallerWindowController: NSWindowController, NSWindowDelegat
 
     init(defaultProvider: String, existingSummary: String) {
         let provider = BridgeProviderSelection(rawValue: defaultProvider) ?? .hermes
-        self.defaultProvider = provider
         self.selectedProvider = provider == .none ? .hermes : provider
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 640))
@@ -96,6 +94,7 @@ final class BridgeInstallerWindowController: NSWindowController, NSWindowDelegat
         statusLabel.stringValue = "設定完成"
         detailLabel.stringValue = "bridge 已安裝並交給 macOS 背景服務管理。接下來可以登入並配對手機。"
         startButton.title = "繼續"
+        closeButton.title = "關閉"
         startButton.isEnabled = true
         closeButton.isEnabled = true
         appendLog("完成。")
