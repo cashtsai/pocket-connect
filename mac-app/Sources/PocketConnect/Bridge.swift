@@ -109,7 +109,16 @@ final class BridgeClient {
     }
 
     /// Host portion of the phone-facing URL (for the QR payload's host= param).
-    var host: String { URL(string: pairingBaseURL)?.host ?? pairingBaseURL }
+    var host: String {
+        guard let components = URLComponents(string: pairingBaseURL),
+              let host = components.host else {
+            return pairingBaseURL
+        }
+        if let port = components.port {
+            return "\(host):\(port)"
+        }
+        return host
+    }
     /// Scheme portion of the phone-facing URL (for the QR payload's scheme= param).
     var scheme: String { URL(string: pairingBaseURL)?.scheme ?? "https" }
 

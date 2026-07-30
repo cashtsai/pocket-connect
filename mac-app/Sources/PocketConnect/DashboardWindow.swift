@@ -168,33 +168,29 @@ final class DashboardViewModel: ObservableObject {
         qrImage = nil
         guard Keychain.loadSessionToken() != nil else { pairingStatus = "請先登入"; return }
         pairingStatus = "檢查中…"
-        // 免費模式（自動臨時 tunnel）網址會變，靠 CloudKit 同步給手機 → 必須開 iCloud。
-        // 有自訂固定網址（進階）就不需要（網址不變）。
-        if appDelegate.customConnectURL == nil {
+        // 正常優先順序：先拿 Cloudflare 臨時公開網址；拿不到才降級到
+        // 使用者固定網址或同網段/Tailscale 的本機候選網址。不要假設使用者一定有 Tailscale。
+        if appDelegate.autoTunnelURL != nil {
+            mintPairingCode()
+            return
+        }
+        if appDelegate.tunnelManager.isAvailable {
             if let reason = CloudGate.staticDisableReason() {
-                if appDelegate.autoTunnelURL != nil {
-                    // A signed CloudKit build can keep the phone updated after
-                    // a tunnel URL churn. For the first QR, the payload already
-                    // carries the current tunnel host, so local/dev builds may
-                    // still mint a usable pairing QR.
-                    mintPairingCode()
-                } else {
-                    waitForTunnelThenMint(cloudGateReason: reason)
-                }
+                waitForTunnelThenMint(cloudGateReason: reason)
                 return
             }
             CKContainer.default().accountStatus { [weak self] status, _ in
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if status == .available {
-                        self.mintPairingCode()
+                        self.waitForTunnelThenMint(cloudGateReason: "iCloud 可用")
                     } else {
-                        self.pairingStatus = "免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。"
+                        self.waitForTunnelThenMint(cloudGateReason: "iCloud 尚未可用")
                     }
                 }
             }
         } else {
-            mintPairingCode()
+            fallbackPairingWithoutTunnel(reason: "這個 Pocket 測試包沒有包含 cloudflared，系統路徑也找不到 cloudflared。")
         }
     }
 
@@ -207,10 +203,15 @@ final class DashboardViewModel: ObservableObject {
             return
         }
 
+        guard appDelegate.tunnelManager.isAvailable else {
+            fallbackPairingWithoutTunnel(reason: "找不到 cloudflared。")
+            return
+        }
+
         appDelegate.tunnelManager.start()
         pairingStatus = "正在等待臨時連線網址…"
         guard attempt < 20 else {
-            pairingStatus = "等不到臨時連線網址。\n請稍後再按一次，或到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。（目前\(reason)）"
+            fallbackPairingWithoutTunnel(reason: "等不到臨時連線網址。（\(reason)）")
             return
         }
 
@@ -218,6 +219,24 @@ final class DashboardViewModel: ObservableObject {
             guard let self, self.pairingVisible, self.qrImage == nil else { return }
             self.waitForTunnelThenMint(cloudGateReason: reason, attempt: attempt + 1)
         }
+    }
+
+    private func fallbackPairingWithoutTunnel(reason: String) {
+        guard let appDelegate else { return }
+        if appDelegate.customConnectURL != nil {
+            appDelegate.onConnectURLChanged()
+            pairingStatus = "臨時公開網址不可用，改用你設定的固定網址。"
+            mintPairingCode()
+            return
+        }
+        if let directURL = appDelegate.directConnectURL {
+            appDelegate.onConnectURLChanged()
+            let host = URL(string: directURL)?.host ?? directURL
+            pairingStatus = "臨時公開網址不可用，改用本機網路候選位址 \(host)。\n手機需和這台 Mac 在同 Wi‑Fi/LAN，或使用同一個私有網路。"
+            mintPairingCode()
+            return
+        }
+        pairingStatus = "\(reason)\n請安裝/綁入 cloudflared，或在下方「連線設定」填固定網址。"
     }
 
     private func mintPairingCode() {

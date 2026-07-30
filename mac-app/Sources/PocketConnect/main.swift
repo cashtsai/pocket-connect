@@ -135,7 +135,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         return (s?.isEmpty ?? true) ? nil : s
     }
     var autoTunnelURL: String?
-    var effectiveConnectURL: String { customConnectURL ?? autoTunnelURL ?? cfg.connectURL }
+    var directConnectURL: String? {
+        let candidates = HostCandidates.gather(bridgePort: cfg.bridgePort, tunnelURL: nil)
+        return candidates.first(where: { !Self.isTailnetConnectURL($0) }) ?? candidates.first
+    }
+    var effectiveConnectURL: String { autoTunnelURL ?? customConnectURL ?? directConnectURL ?? cfg.connectURL }
     var localBridgeURL: String { "http://127.0.0.1:\(cfg.bridgePort)" }
     lazy var bridge = BridgeClient(baseURL: localBridgeURL, pairingBaseURL: effectiveConnectURL)
     lazy var webAuthBridge = BridgeClient(baseURL: cfg.webAuthURL)
@@ -172,6 +176,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     private var bridgeInstallerWindow: BridgeInstallerWindowController?
 
     private var isSignedIn: Bool { Keychain.loadSessionToken() != nil }
+
+    private static func isTailnetConnectURL(_ raw: String) -> Bool {
+        guard let host = URL(string: raw)?.host else { return false }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        return parts.count == 4 && parts[0] == 100 && (64...127).contains(parts[1])
+    }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only
