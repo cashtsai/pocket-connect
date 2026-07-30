@@ -57,7 +57,10 @@ printf '%s\n' "$BRIDGE_DEFAULT_PROVIDER" > "$APPDIR/Contents/Resources/BridgeDef
 # BUNDLE_CLOUDFLARED=0 跳過，避免 helper codesign 擋住本地 DMG 驗證。
 BUNDLE_CLOUDFLARED="${BUNDLE_CLOUDFLARED:-1}"
 if [[ "$BUNDLE_CLOUDFLARED" == "1" ]]; then
-  for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
+  CLOUDFLARED_PATH="${CLOUDFLARED_PATH:-}"
+  [[ -n "$CLOUDFLARED_PATH" ]] && CLOUDFLARED_PATH="${CLOUDFLARED_PATH/#\~/$HOME}"
+  for cf in "$CLOUDFLARED_PATH" packaging/cloudflared /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
+    [[ -z "$cf" ]] && continue
     if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
   done
 fi
