@@ -106,7 +106,11 @@ final class DashboardViewModel: ObservableObject {
         activeBridgeProviderName = Self.readActiveBridgeProviderName()
         usingCustomURL = appDelegate.customConnectURL != nil
         tokenDetected = BridgeToken.read() != nil
-        appDelegate.supervisor.probeLatency(appDelegate.effectiveConnectURL) { [weak self] ok, ms in
+        // Dashboard's primary light is the desktop app's control path: the
+        // local bridge.  The phone-facing URL can churn (Cloudflare quick
+        // tunnel) or be temporarily unreachable while local app traffic still
+        // works with the bridge token.
+        appDelegate.supervisor.probeLatency(appDelegate.localBridgeURL) { [weak self] ok, ms in
             self?.bridgeReachable = ok
             self?.bridgeLatencyMs = ms
         }
@@ -414,7 +418,7 @@ struct DashboardView: View {
 
     private var connectionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("連線狀況")
+            sectionTitle("本機 bridge 狀態")
             HStack(spacing: 6) {
                 Circle().fill(model.bridgeReachable ? Brand.green : Brand.red).frame(width: 8, height: 8)
                 Text(model.bridgeReachable ? "已連線" : "未連線").foregroundStyle(Brand.ink)
@@ -423,7 +427,8 @@ struct DashboardView: View {
                 }
             }
             if !model.connectHost.isEmpty {
-                Text(model.connectHost).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                Text("手機入口: \(model.connectHost)")
+                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
             }
         }
     }

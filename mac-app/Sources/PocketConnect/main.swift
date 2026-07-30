@@ -105,7 +105,11 @@ final class Supervisor {
         URLSession.shared.dataTask(with: r) { _, resp, _ in
             let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            let ok = (200..<300).contains(status)
+            // A reachable token-gated bridge may answer 401/403 to an
+            // unauthenticated health probe.  That still proves the network path
+            // and bridge process are alive; authenticated app calls carry the
+            // bearer token separately.
+            let ok = (200..<300).contains(status) || status == 401 || status == 403
             DispatchQueue.main.async { done(ok, ok ? elapsedMs : nil) }
         }.resume()
     }
