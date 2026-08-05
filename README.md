@@ -45,3 +45,11 @@ NOTARIZE=1 ./packaging/build_dmg.sh # Developer ID 正式簽章、公證、stapl
 - **OSS**：這個桌面 App 的「區網直連 / BYO tunnel / 自動臨時 tunnel」基本款。
 - **善字營（商業）**：託管 relay + 帳號 + 連上自動開好 Hermes + 一鍵安裝。便利性與託管 = 付費價值。
 - 連線拓撲走「各自自架」（每人用自己的 Mac 當主機）；免費/進階兩層。
+
+## 授權（License）
+**Apache License 2.0**（見 [`LICENSE`](LICENSE)）—— 永久、免權利金、含明確專利授權。
+自由 fork、修改、商用；只請保留授權與著作權標示。
+
+專利部分另附一份 Tesla 式的善意承諾（見 [`PATENTS.md`](PATENTS.md)）：**只要你善意
+使用，我們不會對你發動專利訴訟。** 唯品牌名/商標（*Pocket* 字標與口袋 icon）不在開源
+範圍內——程式碼隨你縫,別掛我們的名做山寨。
