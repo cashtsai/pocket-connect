@@ -1,27 +1,42 @@
-# Session Relay: xw-0701-a44839-pocket-connect-m1-apple-qr
-> 壓縮時間：2026-07-01 22:00 CST (raw fallback)
+# Session Relay: xw-pocketconn-m3envdetect-20260714
 
-  └─────────────────────────────────────────────────────────────┴───────────┘
+> 更新時間：2026-07-14 · 承接 20260712（bridge 開源 + install_hermes.sh 自動 clone，commit aa70ff6）
 
-  現在請你做這一步(App 已開在你螢幕上):
-  1. 在「Pocket Connect 設定」視窗點 「使用 Apple 登入」。
-  2. 用 Touch ID / Apple ID 密碼 通過 Apple 的授權面板。
-  3. 成功的話畫面會直接切到「配對這台桌機」QR。
+## 本輪完成
 
-  完成後跟我說一聲(或回「done」),我會立刻驗證:
-  - 從 Keychain 讀出剛存的 session token(security find-generic-password -s
-  com.pocketagent.desktop -a account-session-token,可能會跳一次鑰匙圈「允許」),
-  - 用它打 /app/v1/account,回報 apple_user_id 是否真的建立 = 驗收 #3 過關。
+- **收掉前輪殘餘風險 1（環境檢查只掛 onboarding 入口）**：`main.swift` 新增
+  `checkEnvironmentAtLaunch()` —— 已完成 onboarding 的機器每次啟動仍跑健康檢查
+  （spec §1「首次啟動或每次啟動」），Hermes 被移除就重新拉起引導安裝畫面。
+  - 設計取捨：只對 `missingHermes` 彈窗。`missingBridge` 不彈——bridge 由
+    LaunchAgent KeepAlive 拉起，開機初期 /health 沒回應是常態，連線狀態已由
+    選單列燈號/控制台呈現，不值得每次開機閃引導畫面。
+  - 新增 `finishEnvironmentGate()`：環境恢復就緒後，已 onboarding 且已登入的
+    使用者直接關窗，不會被丟回登入頁（spec §5「已就緒的使用者不被多問一次」）。
+    未登入者照舊進 welcome 登入頁。
 
-  若登入面板報錯,把錯誤訊息告訴我(視窗上會顯示簡短錯誤,例如「登入伺服器失敗」),
-  我再從 bridge log / audience 這邊追。
+## 本輪驗證（本地）
 
-  要我在你登入後才 push 分支上 GitHub,還是現在就先 push?(目前只 commit
-  在本機,依指示還沒開 PR。)
+- `swift build` 通過；`swift test` 40/40 綠（PocketConnectKit 測試套件）。
+- 執行期煙霧測試（`POCKET_ENV_FORCE` + defaults `pocketConnectOnboarded`，
+  觀察 `[env-check]` NSLog）四情境全過：
+  1. onboarded=true + missingHermes → 啟動健康檢查觸發引導安裝畫面 ✅
+  2. onboarded=true + ready → `action=none`，不彈窗 ✅
+  3. onboarded=false + ready → 原首次啟動路徑不變（gate → welcome）✅
+  4. onboarded=true + missingBridge → `action=none`，不彈窗（設計如上）✅
+- 驗證插曲（供後人省時間）：機器 load ~52 時 AppKit app 從 shell 啟動要
+  **超過 6 秒**才會進 `applicationDidFinishLaunching`，太早 kill 會誤判
+  「沒有任何 log」。煙霧測試請用「輪詢等 log 出現」而不是固定 sleep。
 
-✻ Sautéed for 17m 24s · 1 shell still running
-                                         new task? /clear to save 176.4k tokens
-────────────────────────────────────────────────────────────────────────────────
-❯ done, logged in — verify it
-────────────────────────────────────────────────────────────────────────────────
-  ⏵⏵ accept edits on · 1 shell · ← for agents · ↓ to manage                 /rc
+## 待拍板／未完成
+
+- ~~bridge repo 補 MIT LICENSE~~ **已完成**（2026-07-14 善彰拍板「LICENSE
+  可以推了」，commit 9e1ac64 直推 bridge repo main，GitHub 已識別為 MIT）。
+- bridge repo 內部文件（HANDOFF_CREDENTIALS.md 等）是否清理，仍待拍板
+  （在 git 歷史裡，徹底清要 rewrite history + force push）。
+
+## 下一步建議
+
+1. 找乾淨 macOS 使用者帳號跑真實冷啟動驗收（spec §5 驗收第 1、2 項，XCash
+   線，spec §6）——bridge 可自動 clone，「全新機器全自動裝到能配對」應可全程走通。
+2. 驗收過後把 feat/m3-env-detection 出 PR。
+3. bridge repo 內部文件清理拍板後另行執行。

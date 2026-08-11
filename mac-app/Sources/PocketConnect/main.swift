@@ -190,6 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         // First-run: show onboarding unless already completed.
         if !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
             presentOnboarding()
+        } else {
+            checkEnvironmentAtLaunch()
         }
 
         // 開發/自動化驗證用:POCKET_SHOW_DASHBOARD=1 啟動即開控制台
@@ -418,11 +420,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         presentOnboarding()
     }
 
+    private var installer: HermesInstaller?
+
     private func presentOnboarding() {
         let controller = onboarding ?? OnboardingWindowController()
         controller.flowDelegate = self
         onboarding = controller
+        controller.onEnvironmentInstall = { [weak self] in self?.runHermesInstall() }
+        controller.onEnvironmentRecheck = { [weak self] in self?.gateOnboardingEnvironment() }
+        // M3 spec §1/§2:登入前先做環境檢查;present 前先切到檢查畫面,
+        // 避免 welcome 頁閃一下。
+        gateOnboardingEnvironment()
         controller.present()
+    }
+
+    /// M3 spec §1「每次啟動時的健康檢查」：已完成 onboarding 的機器啟動時仍確認
+    /// Hermes 還在,被移除就重新拉起引導安裝（接力包殘餘風險 1）。只對
+    /// missingHermes 彈窗——bridge 由 LaunchAgent KeepAlive 拉起,開機初期
+    /// /health 沒回應是常態,連線狀態已由選單列燈號/控制台呈現,不值得閃引導畫面。
+    private func checkEnvironmentAtLaunch() {
+        EnvironmentCheck.run(bridgePort: cfg.bridgePort) { [weak self] status in
+            NSLog("[env-check] launch health status=%@, action=%@", String(describing: status),
+                  status == .missingHermes ? "environment-gate" : "none")
+            guard let self, status == .missingHermes else { return }
+            self.presentOnboarding()
+        }
+    }
+
+    /// 環境檢查 → ready 直接進登入頁（已就緒的使用者不被多問,spec §5）,
+    /// 缺 Hermes/bridge 則停在引導安裝畫面。
+    private func gateOnboardingEnvironment() {
+        guard let controller = onboarding else { return }
+        controller.showEnvironmentBusy("正在檢查執行環境…")
+        EnvironmentCheck.run(bridgePort: cfg.bridgePort) { [weak self, weak controller] status in
+            guard let self, let controller else { return }
+            NSLog("[env-check] status=%@, screen=%@", String(describing: status),
+                  status == .ready ? "ready" : "environment-gate")
+            status == .ready ? self.finishEnvironmentGate(controller) : controller.showEnvironmentGate(status)
+        }
+    }
+
+    /// 環境就緒後的去向：未登入 → welcome 登入頁;已 onboarding 且已登入
+    /// （啟動健康檢查觸發的重新引導）→ 直接關窗,不把登入過的人丟回登入頁
+    /// （spec §5「已就緒的使用者不被多問一次」）。
+    private func finishEnvironmentGate(_ controller: OnboardingWindowController) {
+        if UserDefaults.standard.bool(forKey: cfg.onboardedKey), isSignedIn {
+            controller.window?.close()   // windowWillClose 會清掉 onboarding 參考
+        } else {
+            controller.showWelcome()
+        }
+    }
+
+    /// 「一鍵安裝 Hermes」→ 背景跑 install_hermes.sh;裝完自動重新檢查,
+    /// 通過就自動進登入頁,失敗顯示錯誤 + 記錄檔入口（spec §2）。
+    private func runHermesInstall() {
+        guard let controller = onboarding, installer == nil else { return }
+        controller.showEnvironmentBusy("安裝中…（第一次安裝可能需要幾分鐘）")
+        let inst = HermesInstaller()
+        installer = inst
+        inst.run { [weak self] ok, detail in
+            guard let self else { return }
+            self.installer = nil
+            guard let controller = self.onboarding else { return }   // 視窗已被關掉
+            EnvironmentCheck.run(bridgePort: self.cfg.bridgePort) { [weak self, weak controller] status in
+                guard let self, let controller else { return }
+                if status == .ready {
+                    self.finishEnvironmentGate(controller)
+                } else {
+                    controller.showEnvironmentGate(status, error: ok
+                        ? "安裝腳本跑完了,但環境檢查仍未通過。"
+                        : detail)
+                }
+            }
+        }
     }
 
     // OnboardingDelegate — the delegate owns the actual auth + pairing calls.

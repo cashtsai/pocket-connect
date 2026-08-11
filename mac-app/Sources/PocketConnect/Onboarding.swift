@@ -321,6 +321,99 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             .forEach { container.addSubview($0) }
     }
 
+    // MARK: 環境檢查/引導安裝（M3 spec §2）— 缺 Hermes/bridge 時擋在登入前。
+    var onEnvironmentInstall: (() -> Void)?
+    var onEnvironmentRecheck: (() -> Void)?
+
+    /// 檢查中/安裝中的過場：奶油雲背景 + spinner + 一行說明。
+    func showEnvironmentBusy(_ text: String) {
+        let content = beginEnvironmentScreen()
+        let busySpinner = NSProgressIndicator(frame: NSRect(x: 200, y: 250, width: 20, height: 20))
+        busySpinner.style = .spinning
+        busySpinner.startAnimation(nil)
+        let label = envLabel(text, y: 210, size: 13, color: PocketPalette.ink.withAlphaComponent(0.62))
+        content.addSubview(busySpinner)
+        content.addSubview(label)
+    }
+
+    /// spec §2 引導畫面：狀態 + 說明 + 一鍵安裝／重新檢查；
+    /// error 非 nil 時（安裝失敗）追加錯誤訊息與「查看記錄檔」。
+    func showEnvironmentGate(_ status: EnvironmentStatus, error: String? = nil) {
+        let content = beginEnvironmentScreen()
+        let title = envLabel("需要先準備好執行環境", y: 388, size: 18, color: PocketPalette.ink)
+        title.font = .systemFont(ofSize: 18, weight: .semibold)
+
+        let reason = status == .missingBridge
+            ? "❌ Hermes 已安裝,但 bridge 沒有在執行"
+            : "❌ 沒偵測到 Hermes"
+        let reasonLabel = envLabel(reason, y: 340, size: 14, color: PocketPalette.red)
+        reasonLabel.font = .systemFont(ofSize: 14, weight: .medium)
+
+        let body = NSTextField(wrappingLabelWithString:
+            "這台 Mac 需要先裝好 Hermes 才能執行 Pocket。\n按下方按鈕自動安裝。")
+        body.frame = NSRect(x: 50, y: 270, width: 320, height: 56)
+        body.alignment = .center
+        body.font = .systemFont(ofSize: 13)
+        body.textColor = PocketPalette.ink.withAlphaComponent(0.62)
+        body.drawsBackground = false
+        content.addSubview(body)
+
+        let install = NSButton(title: "一鍵安裝 Hermes", target: self, action: #selector(tapEnvironmentInstall))
+        install.frame = NSRect(x: 110, y: 214, width: 200, height: 34)
+        install.bezelStyle = .rounded
+        install.keyEquivalent = "\r"
+        content.addSubview(install)
+
+        let recheck = NSButton(title: "我已經裝好了，重新檢查", target: self, action: #selector(tapEnvironmentRecheck))
+        recheck.frame = NSRect(x: 110, y: 178, width: 200, height: 30)
+        recheck.bezelStyle = .rounded
+        content.addSubview(recheck)
+
+        if let error {
+            let errLabel = NSTextField(wrappingLabelWithString: error)
+            errLabel.frame = NSRect(x: 40, y: 96, width: 340, height: 70)
+            errLabel.alignment = .center
+            errLabel.font = .systemFont(ofSize: 11)
+            errLabel.textColor = PocketPalette.red
+            errLabel.drawsBackground = false
+            content.addSubview(errLabel)
+            let logButton = NSButton(title: "查看記錄檔", target: self, action: #selector(tapEnvironmentLog))
+            logButton.frame = NSRect(x: 150, y: 58, width: 120, height: 28)
+            logButton.bezelStyle = .rounded
+            content.addSubview(logButton)
+        }
+    }
+
+    /// 環境系列畫面共用的起手式：清空 container、鋪滿雲背景（無 logo 特規）。
+    private func beginEnvironmentScreen() -> NSView {
+        container.subviews.forEach { $0.removeFromSuperview() }
+        background.frame = container.bounds
+        background.logoSafeZone = nil
+        container.addSubview(background)
+        return container
+    }
+
+    private func envLabel(_ text: String, y: CGFloat, size: CGFloat, color: NSColor) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.frame = NSRect(x: 30, y: y, width: 360, height: size + 10)
+        label.alignment = .center
+        label.font = .systemFont(ofSize: size)
+        label.textColor = color
+        label.drawsBackground = false
+        container.addSubview(label)
+        return label
+    }
+
+    /// 環境檢查通過後回到登入頁（welcome）。
+    func showWelcome() { buildWelcome() }
+
+    @objc private func tapEnvironmentInstall() { onEnvironmentInstall?() }
+    @objc private func tapEnvironmentRecheck() { onEnvironmentRecheck?() }
+    @objc private func tapEnvironmentLog() {
+        NSWorkspace.shared.activateFileViewerSelecting(
+            [URL(fileURLWithPath: HermesInstaller.logPath)])
+    }
+
     @objc private func tapSignIn() {
         errorLabel.stringValue = ""
         appleButton.isEnabled = false

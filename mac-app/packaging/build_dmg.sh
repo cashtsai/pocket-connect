@@ -39,6 +39,8 @@ cp packaging/MenuBarIconOff.png "$APPDIR/Contents/Resources/"
 # login uses. See docs/BRAND_CLOUD_BACKGROUND.md + brand CIS.
 cp packaging/pocket-wordmark.png "$APPDIR/Contents/Resources/"
 cp packaging/LuckiestGuy-Regular.ttf "$APPDIR/Contents/Resources/"
+# M3 環境引導:「一鍵安裝 Hermes」按鈕在背景跑的安裝腳本(spec §3)。
+cp packaging/install_hermes.sh "$APPDIR/Contents/Resources/"
 cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null || true
 
 # 免費零設定連線用的 cloudflared（自動臨時 tunnel）。有系統版就打包進去，讓使用者
