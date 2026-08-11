@@ -105,7 +105,11 @@ final class Supervisor {
         URLSession.shared.dataTask(with: r) { _, resp, _ in
             let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            let ok = (200..<300).contains(status)
+            // A reachable token-gated bridge may answer 401/403 to an
+            // unauthenticated health probe.  That still proves the network path
+            // and bridge process are alive; authenticated app calls carry the
+            // bearer token separately.
+            let ok = (200..<300).contains(status) || status == 401 || status == 403
             DispatchQueue.main.async { done(ok, ok ? elapsedMs : nil) }
         }.resume()
     }
@@ -135,7 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         return (s?.isEmpty ?? true) ? nil : s
     }
     var autoTunnelURL: String?
-    var effectiveConnectURL: String { customConnectURL ?? autoTunnelURL ?? cfg.connectURL }
+    var directConnectURL: String? {
+        let candidates = HostCandidates.gather(bridgePort: cfg.bridgePort, tunnelURL: nil)
+        return candidates.first(where: { !Self.isTailnetConnectURL($0) }) ?? candidates.first
+    }
+    var effectiveConnectURL: String { autoTunnelURL ?? customConnectURL ?? directConnectURL ?? cfg.connectURL }
     var localBridgeURL: String { "http://127.0.0.1:\(cfg.bridgePort)" }
     lazy var bridge = BridgeClient(baseURL: localBridgeURL, pairingBaseURL: effectiveConnectURL)
     lazy var webAuthBridge = BridgeClient(baseURL: cfg.webAuthURL)
@@ -167,8 +175,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     var dashboardWindow: NSWindow?
     var dashboardModel: DashboardViewModel?
     var dashboardRefreshTimer: Timer?
+    private var bridgeInstallProcess: Process?
+    private var bridgeInstallOutputPipe: Pipe?
+    private var bridgeInstallerWindow: BridgeInstallerWindowController?
 
     private var isSignedIn: Bool { Keychain.loadSessionToken() != nil }
+
+    private static func isTailnetConnectURL(_ raw: String) -> Bool {
+        guard let host = URL(string: raw)?.host else { return false }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        return parts.count == 4 && parts[0] == 100 && (64...127).contains(parts[1])
+    }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only
@@ -182,13 +199,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         supervisor.onLaunchFailure = { [weak self] message in
             self?.cloudSync?.logError(level: .error, code: "bridge_launch_failed", message: message)
         }
+        let bridgeInstallerPresented = presentBundledBridgeInstallerIfNeeded()
         rebuildMenu()
         // periodic reachability poll
         Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.poll() }
         poll()
 
         // First-run: show onboarding unless already completed.
-        if !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
+        if !bridgeInstallerPresented && !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
             presentOnboarding()
         } else {
             checkEnvironmentAtLaunch()
@@ -213,6 +231,145 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
                 self.onConnectURLChanged()
             }
             tunnelManager.start()
+        }
+    }
+
+    @discardableResult
+    private func presentBundledBridgeInstallerIfNeeded() -> Bool {
+        guard let context = bundledBridgeInstallContextIfNeeded() else { return false }
+        let controller = BridgeInstallerWindowController(
+            defaultProvider: bundledBridgeDefaultProvider(),
+            existingSummary: providerDetectionSummary(layout: context.layout)
+        )
+        controller.onStartInstall = { [weak self, weak controller] provider in
+            guard let self, let controller else { return }
+            self.runBundledBridgeInstaller(
+                bundleRoot: context.bundleRoot,
+                layout: context.layout,
+                provider: provider,
+                controller: controller
+            )
+        }
+        controller.onCloseAfterFinish = { [weak self] in
+            guard let self else { return }
+            self.bridgeInstallerWindow = nil
+            if !UserDefaults.standard.bool(forKey: self.cfg.onboardedKey) {
+                self.presentOnboarding()
+            }
+        }
+        bridgeInstallerWindow = controller
+        controller.present()
+        return true
+    }
+
+    private func bundledBridgeInstallContextIfNeeded() -> (bundleRoot: URL, layout: BridgeInstallLayout)? {
+        guard let bundleRoot = Bundle.main.resourceURL?.appendingPathComponent("bridge"),
+              FileManager.default.isExecutableFile(
+                atPath: bundleRoot.appendingPathComponent("deploy/install-local-bridge.sh").path
+              )
+        else { return nil }
+
+        let layout = BridgeInstallLayout(homeDirectory: NSHomeDirectory())
+        let bridgePy = layout.bridgeInstallRoot + "/bridge.py"
+        let needsInstall = !FileManager.default.fileExists(atPath: layout.launchAgentPath)
+            || !FileManager.default.fileExists(atPath: bridgePy)
+        guard needsInstall else { return nil }
+
+        return (bundleRoot, layout)
+    }
+
+    private func runBundledBridgeInstaller(
+        bundleRoot: URL,
+        layout: BridgeInstallLayout,
+        provider: BridgeProviderSelection,
+        controller: BridgeInstallerWindowController
+    ) {
+        let plan = BridgeInstallPlan(
+            layout: layout,
+            bridgeBundleRoot: bundleRoot.path,
+            existingEnvironment: ProcessInfo.processInfo.environment
+        )
+        var installerEnvironment = plan.environment
+        installerEnvironment["POCKET_DEFAULT_PROVIDER"] = bundledBridgeDefaultProvider()
+        installerEnvironment["POCKET_PROVIDER"] = provider.rawValue
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: plan.installScriptPath)
+        process.environment = installerEnvironment
+        process.currentDirectoryURL = bundleRoot
+        process.standardInput = FileHandle.nullDevice
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+        outputPipe.fileHandleForReading.readabilityHandler = { [weak controller] handle in
+            let data = handle.availableData
+            guard !data.isEmpty,
+                  let chunk = String(data: data, encoding: .utf8)
+            else { return }
+            DispatchQueue.main.async {
+                for line in chunk.components(separatedBy: .newlines) {
+                    controller?.appendLog(line)
+                }
+            }
+        }
+        process.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                outputPipe.fileHandleForReading.readabilityHandler = nil
+                self?.bridgeInstallProcess = nil
+                self?.bridgeInstallOutputPipe = nil
+                if proc.terminationStatus != 0 {
+                    controller.markFailed("Bundled bridge installer exited \(proc.terminationStatus)。請保留畫面上的 log 方便排查。")
+                    self?.cloudSync?.logError(
+                        level: .error,
+                        code: "bridge_install_failed",
+                        message: "Bundled bridge installer exited \(proc.terminationStatus)"
+                    )
+                } else {
+                    controller.markCompleted()
+                }
+                self?.poll()
+            }
+        }
+        do {
+            try process.run()
+            bridgeInstallProcess = process
+            bridgeInstallOutputPipe = outputPipe
+        } catch {
+            controller.markFailed(error.localizedDescription)
+            cloudSync?.logError(
+                level: .error,
+                code: "bridge_install_failed",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func bundledBridgeDefaultProvider() -> String {
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("BridgeDefaultProvider"),
+              let raw = try? String(contentsOf: url, encoding: .utf8)
+        else { return "hermes" }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch value {
+        case "hermes", "openclaw", "none":
+            return value
+        default:
+            return "hermes"
+        }
+    }
+
+    private func providerDetectionSummary(layout: BridgeInstallLayout) -> String {
+        let fm = FileManager.default
+        let hermesPath = layout.hermesBinCandidates.first { fm.isExecutableFile(atPath: $0) }
+        let openClawConfigured = fm.fileExists(atPath: layout.openClawConfigFile)
+
+        switch (hermesPath, openClawConfigured) {
+        case (.some(let path), true):
+            return "偵測到既有 Hermes（\(path)）與 OpenClaw 設定；選哪一個就採用哪一個，不會覆蓋。"
+        case (.some(let path), false):
+            return "偵測到既有 Hermes（\(path)）；選 Hermes 會直接採用，不會重新安裝。"
+        case (.none, true):
+            return "偵測到既有 OpenClaw 設定；選 OpenClaw 會直接採用，不會覆蓋設定。"
+        case (.none, false):
+            return "目前沒有偵測到既有 Hermes 或 OpenClaw；選 Hermes/OpenClaw 才會 fresh install。"
         }
     }
 

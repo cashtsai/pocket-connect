@@ -71,6 +71,7 @@ final class DashboardViewModel: ObservableObject {
     /// 上次量到連線狀態的時間。少了它,使用者分不出「現在真的連得到」與
     /// 「這是幾分鐘前的舊結果」—— 而那正是會讓人想按刷新的那個疑問。
     @Published var lastCheckedAt: Date?
+    @Published var activeBridgeProviderName = "Hermes / OpenClaw"
     @Published var connectHost = ""
     @Published var cloudStatusText = "—"
     // 連線設定（進階）
@@ -112,9 +113,14 @@ final class DashboardViewModel: ObservableObject {
         guard let appDelegate else { return }
         cloudStatusText = appDelegate.cloudStatusText
         connectHost = URL(string: appDelegate.effectiveConnectURL)?.host ?? appDelegate.effectiveConnectURL
+        activeBridgeProviderName = Self.readActiveBridgeProviderName()
         usingCustomURL = appDelegate.customConnectURL != nil
         tokenDetected = BridgeToken.read() != nil
-        appDelegate.supervisor.probeLatency(appDelegate.effectiveConnectURL) { [weak self] ok, ms in
+        // Dashboard's primary light is the desktop app's control path: the
+        // local bridge.  The phone-facing URL can churn (Cloudflare quick
+        // tunnel) or be temporarily unreachable while local app traffic still
+        // works with the bridge token.
+        appDelegate.supervisor.probeLatency(appDelegate.localBridgeURL) { [weak self] ok, ms in
             self?.bridgeReachable = ok
             self?.bridgeLatencyMs = ms
             self?.lastCheckedAt = Date()
@@ -145,6 +151,29 @@ final class DashboardViewModel: ObservableObject {
                 self.usageError = error.localizedDescription
             }
         }
+    }
+
+    private static func readActiveBridgeProviderName() -> String {
+        let plistPaths = [
+            "~/Library/LaunchAgents/com.pocketconnect.bridge.plist",
+            "~/Library/LaunchAgents/ai.studio.hermes-bridge.plist",
+        ].map { NSString(string: $0).expandingTildeInPath }
+        for plistPath in plistPaths {
+            guard let data = FileManager.default.contents(atPath: plistPath),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let envVars = plist["EnvironmentVariables"] as? [String: Any]
+            else { continue }
+            let raw = (envVars["POCKET_ACTIVE_PROVIDER"] as? String)
+                ?? (envVars["POCKET_PROVIDER"] as? String)
+                ?? (envVars["POCKET_DEFAULT_PROVIDER"] as? String)
+            switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "hermes": return "Hermes"
+            case "openclaw": return "OpenClaw"
+            case "none": return "尚未設定"
+            default: continue
+            }
+        }
+        return "Hermes / OpenClaw"
     }
 
     func loadDevices() {
@@ -203,33 +232,29 @@ final class DashboardViewModel: ObservableObject {
         qrImage = nil
         guard Keychain.loadSessionToken() != nil else { pairingStatus = "請先登入"; return }
         pairingStatus = "檢查中…"
-        // 免費模式（自動臨時 tunnel）網址會變，靠 CloudKit 同步給手機 → 必須開 iCloud。
-        // 有自訂固定網址（進階）就不需要（網址不變）。
-        if appDelegate.customConnectURL == nil {
+        // 正常優先順序：先拿 Cloudflare 臨時公開網址；拿不到才降級到
+        // 使用者固定網址或同網段/Tailscale 的本機候選網址。不要假設使用者一定有 Tailscale。
+        if appDelegate.autoTunnelURL != nil {
+            mintPairingCode()
+            return
+        }
+        if appDelegate.tunnelManager.isAvailable {
             if let reason = CloudGate.staticDisableReason() {
-                if appDelegate.autoTunnelURL != nil {
-                    // A signed CloudKit build can keep the phone updated after
-                    // a tunnel URL churn. For the first QR, the payload already
-                    // carries the current tunnel host, so local/dev builds may
-                    // still mint a usable pairing QR.
-                    mintPairingCode()
-                } else {
-                    waitForTunnelThenMint(cloudGateReason: reason)
-                }
+                waitForTunnelThenMint(cloudGateReason: reason)
                 return
             }
             CKContainer.default().accountStatus { [weak self] status, _ in
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if status == .available {
-                        self.mintPairingCode()
+                        self.waitForTunnelThenMint(cloudGateReason: "iCloud 可用")
                     } else {
-                        self.pairingStatus = "免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。"
+                        self.waitForTunnelThenMint(cloudGateReason: "iCloud 尚未可用")
                     }
                 }
             }
         } else {
-            mintPairingCode()
+            fallbackPairingWithoutTunnel(reason: "這個 Pocket 測試包沒有包含 cloudflared，系統路徑也找不到 cloudflared。")
         }
     }
 
@@ -242,10 +267,15 @@ final class DashboardViewModel: ObservableObject {
             return
         }
 
+        guard appDelegate.tunnelManager.isAvailable else {
+            fallbackPairingWithoutTunnel(reason: "找不到 cloudflared。")
+            return
+        }
+
         appDelegate.tunnelManager.start()
         pairingStatus = "正在等待臨時連線網址…"
         guard attempt < 20 else {
-            pairingStatus = "等不到臨時連線網址。\n請稍後再按一次，或到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。（目前\(reason)）"
+            fallbackPairingWithoutTunnel(reason: "等不到臨時連線網址。（\(reason)）")
             return
         }
 
@@ -253,6 +283,24 @@ final class DashboardViewModel: ObservableObject {
             guard let self, self.pairingVisible, self.qrImage == nil else { return }
             self.waitForTunnelThenMint(cloudGateReason: reason, attempt: attempt + 1)
         }
+    }
+
+    private func fallbackPairingWithoutTunnel(reason: String) {
+        guard let appDelegate else { return }
+        if appDelegate.customConnectURL != nil {
+            appDelegate.onConnectURLChanged()
+            pairingStatus = "臨時公開網址不可用，改用你設定的固定網址。"
+            mintPairingCode()
+            return
+        }
+        if let directURL = appDelegate.directConnectURL {
+            appDelegate.onConnectURLChanged()
+            let host = URL(string: directURL)?.host ?? directURL
+            pairingStatus = "臨時公開網址不可用，改用本機網路候選位址 \(host)。\n手機需和這台 Mac 在同 Wi‑Fi/LAN，或使用同一個私有網路。"
+            mintPairingCode()
+            return
+        }
+        pairingStatus = "\(reason)\n請安裝/綁入 cloudflared，或在下方「連線設定」填固定網址。"
     }
 
     private func mintPairingCode() {
@@ -325,7 +373,14 @@ struct DashboardView: View {
                     wordmarkHeader
                     card { pairingSection }
                     card { connectionSection }
-                    card { AgentEnginesSection(model: model.agents) }
+                    card {
+                        AgentEnginesSection(
+                            model: model.agents,
+                            bridgeProviderName: model.activeBridgeProviderName,
+                            bridgeReachable: model.bridgeReachable,
+                            bridgeLatencyMs: model.bridgeLatencyMs
+                        )
+                    }
                     card { usageSection }
                     card { connectionSettingsSection }
                     card { devicesSection }
@@ -404,7 +459,7 @@ struct DashboardView: View {
 
     private var connectionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("連線狀況")
+            sectionTitle("本機 bridge 狀態")
             HStack(spacing: 6) {
                 Circle().fill(model.bridgeReachable ? Brand.green : Brand.red).frame(width: 8, height: 8)
                 Text(model.bridgeReachable ? "已連線" : "未連線").foregroundStyle(Brand.ink)
@@ -430,7 +485,8 @@ struct DashboardView: View {
                 .accessibilityLabel("重新檢查連線")
             }
             if !model.connectHost.isEmpty {
-                Text(model.connectHost).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                Text("手機入口: \(model.connectHost)")
+                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
             }
         }
     }

@@ -13,6 +13,12 @@
 - 選單:**複製連線網址**、**顯示下載 App QR**(CoreImage 產生)、**啟動/停止服務**、結束
 - **服務 supervise**:啟動/停止本機 `bridge`(uvicorn)+ `cloudflared`(pocket tunnel)
 - **打包**:`packaging/build_dmg.sh` → `Pocket.app` + `Pocket-<ver>.dmg`
+- **bridge bundle(可選)**:`BRIDGE_BUNDLE_ROOT=/path/to/hermes-studio-bridge
+  ./packaging/build_dmg.sh` 會把 bridge + `deploy/install-local-bridge.sh`
+  放進 `Pocket.app/Contents/Resources/bridge`，讓 app 可在首次啟動或升級時安裝
+  per-user LaunchAgent。App 啟動 bundled installer 時使用 `POCKET_PROVIDER=auto`：
+  先採用使用者既有 Hermes/OpenClaw；都沒有才依
+  `BRIDGE_DEFAULT_PROVIDER=hermes|openclaw|none` 補裝一個 provider。
 
 ## M1 新增(登入 + 配對 QR + 發佈)
 - **首次啟動引導**:第一次開啟彈出視窗(歡迎 → Apple 登入 → 配對 QR)。用
@@ -79,7 +85,38 @@ mac-app/
 cd mac-app
 swift run            # 直接跑(選單列會出現 P 圖示)
 ./packaging/build_dmg.sh   # 產出 build/Pocket Connect.app 與 .dmg
+
+# 包含 local bridge installer/runtime 的 DMG:
+BRIDGE_BUNDLE_ROOT=~/apps/hermes-studio-bridge ./packaging/build_dmg.sh
 ```
+
+## Bridge 安裝 / 維護
+
+PocketConnect app 只負責安裝與維護 local bridge，不把 Hermes/OpenClaw 的
+production state 包進 DMG。標準位置:
+
+- bridge bundle:`~/Library/Application Support/PocketConnect/bridge/current`
+- LaunchAgent:`~/Library/LaunchAgents/com.pocketconnect.bridge.plist`
+- Hermes home:`~/apps/hermes-agent/home`
+- OpenClaw config:`~/.pocket/openclaw.json`
+
+升級規則:保留既有 `BRIDGE_TOKEN` 和 provider config，替換 bridge bundle，重啟
+LaunchAgent，最後用 `http://127.0.0.1:8081/health` 驗收。legacy 手工安裝的
+`ai.studio.hermes-bridge.plist` 仍可讀 token，方便過渡。
+
+Provider 採用 / fresh install 規格:
+
+- Hermes:若偵測到既有 Hermes CLI 就採用；否則官方
+  `NousResearch/hermes-agent` clone 到 `~/apps/hermes-agent`，跑 `setup-hermes.sh`
+  non-interactive，建立空的 `home/profiles/*`。
+- OpenClaw:若偵測到 `~/.pocket/openclaw.json` 就採用；否則下載 Node `24.18.0`
+  官方 tarball，`npm install --prefix ~/apps/openclaw-clean/npm
+  openclaw@2026.7.1-2`，用 `com.pocketconnect.openclaw` LaunchAgent 跑
+  `127.0.0.1:19801`。
+- 單次安裝只補一個 provider；預設 DMG 是 Hermes，可用
+  `BRIDGE_DEFAULT_PROVIDER=openclaw` 打 OpenClaw 測試包。
+- 不複製 production credentials、profiles、state、Telegram gateways 或
+  `pocket.tsai.cash` tunnel。
 
 ## 下一步(待辦)
 - [x] **首次設定 / 引導**:首次啟動引導(M1)已做,`Config` 仍寫死預設值,尚未做設定頁。
@@ -90,7 +127,8 @@ swift run            # 直接跑(選單列會出現 P 圖示)
   建立已完成端到端驗收。
 - [x] **Bundling cloudflared**:`build_dmg.sh` 會把 Homebrew 的實體 binary 打包進
   `Contents/Resources` 並一起簽章。
-- [ ] **Bundling bridge runtime**:全新使用者仍需要 bridge runtime 安裝／啟動方案。
+- [x] **Bundling bridge runtime**:可用 `BRIDGE_BUNDLE_ROOT` 把 bridge + installer
+  打進 DMG；UI 入口接 `BridgeInstallPlan`。
 - [ ] **登入自啟**:`SMAppService`(Login Item),讓服務開機常駐。
 - [ ] **連上自動開好 Hermes(商業)**:啟動時拉起 personas + 連接器。
 - [x] **簽章 & 公證(Signing & notarization)**:Developer ID 憑證 + 正式 CloudKit

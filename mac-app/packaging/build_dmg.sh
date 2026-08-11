@@ -19,9 +19,10 @@ echo "▸ assemble $APP.app"
 mkdir -p "$APPDIR/Contents/MacOS" "$APPDIR/Contents/Resources"
 cp "$BIN" "$APPDIR/Contents/MacOS/PocketConnect"
 cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
-# Optional: bundle the helper binaries so users need nothing pre-installed.
-#   cp "$(command -v cloudflared)" "$APPDIR/Contents/Resources/cloudflared"
-#   (bridge runtime would be bundled here too — see README "Bundling deps")
+# Optional: bundle helper runtimes so users need nothing pre-installed.
+#   BRIDGE_BUNDLE_ROOT=/path/to/hermes-studio-bridge ./packaging/build_dmg.sh
+# copies the bridge bundle into Contents/Resources/bridge; PocketConnect can run
+# deploy/install-local-bridge.sh from there on first launch or upgrade.
 # App icon (denim cowboy-pocket brand icon, pocket_macos_* full-size set from
 # the brand repo, built with iconutil) → bundled into Resources so Finder/Dock show it.
 cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
@@ -42,13 +43,47 @@ cp packaging/LuckiestGuy-Regular.ttf "$APPDIR/Contents/Resources/"
 # M3 環境引導:「一鍵安裝 Hermes」按鈕在背景跑的安裝腳本(spec §3)。
 cp packaging/install_hermes.sh "$APPDIR/Contents/Resources/"
 cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null || true
+BRIDGE_DEFAULT_PROVIDER="${BRIDGE_DEFAULT_PROVIDER:-hermes}"
+case "$BRIDGE_DEFAULT_PROVIDER" in
+  hermes|openclaw|none) ;;
+  *)
+    echo "✗ BRIDGE_DEFAULT_PROVIDER 必須是 hermes、openclaw 或 none；目前是 $BRIDGE_DEFAULT_PROVIDER" >&2
+    exit 1
+    ;;
+esac
+printf '%s\n' "$BRIDGE_DEFAULT_PROVIDER" > "$APPDIR/Contents/Resources/BridgeDefaultProvider"
 
 # 免費零設定連線用的 cloudflared（自動臨時 tunnel）。有系統版就打包進去，讓使用者
 # 不用自己裝；TunnelManager.resolveCloudflaredPath() 會優先找這個打包版。-L 跟隨
-# Homebrew 的 symlink 複製真檔。codesign --deep 會一併簽它。
-for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
-  if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
-done
+# Homebrew 的 symlink 複製真檔。測試 bridge/provider 安裝時可用
+# BUNDLE_CLOUDFLARED=0 跳過，避免 helper codesign 擋住本地 DMG 驗證。
+BUNDLE_CLOUDFLARED="${BUNDLE_CLOUDFLARED:-1}"
+if [[ "$BUNDLE_CLOUDFLARED" == "1" ]]; then
+  CLOUDFLARED_PATH="${CLOUDFLARED_PATH:-}"
+  [[ -n "$CLOUDFLARED_PATH" ]] && CLOUDFLARED_PATH="${CLOUDFLARED_PATH/#\~/$HOME}"
+  for cf in "$CLOUDFLARED_PATH" packaging/cloudflared /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
+    [[ -z "$cf" ]] && continue
+    if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
+  done
+fi
+
+BRIDGE_BUNDLE_ROOT="${BRIDGE_BUNDLE_ROOT:-}"
+if [[ -n "$BRIDGE_BUNDLE_ROOT" ]]; then
+  BRIDGE_BUNDLE_ROOT="${BRIDGE_BUNDLE_ROOT/#\~/$HOME}"
+  if [[ ! -x "$BRIDGE_BUNDLE_ROOT/deploy/install-local-bridge.sh" ]]; then
+    echo "✗ BRIDGE_BUNDLE_ROOT 缺少 deploy/install-local-bridge.sh：$BRIDGE_BUNDLE_ROOT" >&2
+    exit 1
+  fi
+  echo "▸ bundle local bridge"
+  mkdir -p "$APPDIR/Contents/Resources/bridge"
+  rsync -a --delete \
+    --exclude ".git" \
+    --exclude "__pycache__" \
+    --exclude "*.pyc" \
+    --exclude "bridge.out.log*" \
+    --exclude "bridge.err.log*" \
+    "$BRIDGE_BUNDLE_ROOT/" "$APPDIR/Contents/Resources/bridge/"
+fi
 
 # Sign so it launches locally. Restricted entitlements always come from the
 # matching provisioning profile; never add them to a distribution signature by
