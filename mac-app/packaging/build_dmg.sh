@@ -23,7 +23,7 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 #   cp "$(command -v cloudflared)" "$APPDIR/Contents/Resources/cloudflared"
 #   (bridge runtime would be bundled here too — see README "Bundling deps")
 # App icon (denim cowboy-pocket brand icon, pocket_macos_* full-size set from
-# the sun repo, built with iconutil) → bundled into Resources so Finder/Dock show it.
+# the brand repo, built with iconutil) → bundled into Resources so Finder/Dock show it.
 cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
 # Menu bar glyph: monochrome pocket-outline template mark (menubar_36 from the
 # same brand set), not a system-font placeholder. isTemplate=true in code
