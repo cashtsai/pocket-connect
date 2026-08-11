@@ -85,6 +85,10 @@ final class DashboardViewModel: ObservableObject {
     @Published var devicesError: String?
     @Published var pendingRevokeID: String?
 
+    // AI 用量(/app/v1/usage)。錯誤時保留上一份快照,只在沒資料時顯示錯誤。
+    @Published var usage: UsageSnapshot?
+    @Published var usageError: String?
+
     // 內嵌配對狀態
     @Published var pairingVisible = false
     @Published var qrImage: NSImage?
@@ -119,6 +123,7 @@ final class DashboardViewModel: ObservableObject {
         }
         loadDevices()
         agents.refreshAll()
+        loadUsage()
     }
 
     /// 手動刷新(狀態列右邊那顆)。與定時刷新走同一條路,差別只在會亮轉圈。
@@ -127,6 +132,19 @@ final class DashboardViewModel: ObservableObject {
         guard !isRefreshing else { return }
         isRefreshing = true
         refresh()
+    }
+
+    func loadUsage() {
+        appDelegate?.bridge.fetchUsage { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let snapshot):
+                self.usage = snapshot
+                self.usageError = nil
+            case .failure(let error):
+                self.usageError = error.localizedDescription
+            }
+        }
     }
 
     func loadDevices() {
@@ -308,6 +326,7 @@ struct DashboardView: View {
                     card { pairingSection }
                     card { connectionSection }
                     card { AgentEnginesSection(model: model.agents) }
+                    card { usageSection }
                     card { connectionSettingsSection }
                     card { devicesSection }
                 }
@@ -445,6 +464,103 @@ struct DashboardView: View {
                 }
             }
         }
+    }
+
+    // MARK: AI 用量(/app/v1/usage — Codex 5h + Claude 5h/7d,含降級狀態)
+
+    private var usageSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("AI 用量")
+            if let usage = model.usage {
+                codexUsageRows(usage.codex)
+                Divider().opacity(0.4)
+                claudeUsageRows(usage.claude)
+            } else if let err = model.usageError {
+                Text("讀不到用量資料:\(err)").font(.caption).foregroundStyle(.orange)
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("讀取用量中…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func codexUsageRows(_ codex: CodexUsage?) -> some View {
+        providerHeader("Codex")
+        if let window = codex?.window, codex?.available == true {
+            usageRow("5 小時額度", window)
+        } else {
+            Text("用量資料暫不可用(本機沒有 Codex session 記錄)")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func claudeUsageRows(_ claude: ClaudeUsage?) -> some View {
+        providerHeader("Claude Code")
+        if let claude, claude.available {
+            if claude.officialSynced {
+                if let five = claude.fiveHour { usageRow("5 小時額度", five) }
+                if let seven = claude.sevenDay { usageRow("7 天額度", seven) }
+                if claude.fiveHour == nil && claude.sevenDay == nil {
+                    Text("官方額度視窗已過期,等待下次同步")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                // 降級:沒裝 statusline hook → 只有本機 token 加總,絕不假裝百分比。
+                if let tokens = claude.tokenUsage {
+                    Text("本機估算:輸入 \(Self.tokenText(tokens.inputTokens)) · 輸出 \(Self.tokenText(tokens.outputTokens)) tokens")
+                        .font(.caption).foregroundStyle(Brand.ink)
+                }
+                Text("官方額度暫不可用(未安裝 statusline hook,僅顯示本機估算)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } else {
+            Text("用量資料暫不可用(本機沒有 Claude Code 記錄)")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func providerHeader(_ name: String) -> some View {
+        Text(name).font(.subheadline.weight(.semibold)).foregroundStyle(Brand.ink)
+    }
+
+    /// 一條用量條:標題 + 已用/剩餘百分比 + 進度條 + 重置時間。
+    private func usageRow(_ label: String, _ window: UsageWindow) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(label).font(.caption).foregroundStyle(Brand.ink)
+                Spacer()
+                Text(String(format: "已用 %.0f%% · 剩 %.0f%%", window.usedPercent, window.remainingPercent))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Brand.espresso.opacity(0.12))
+                    Capsule().fill(window.usedPercent >= 85 ? Brand.red : Brand.green)
+                        .frame(width: max(4, geo.size.width * min(1, max(0, window.usedPercent / 100))))
+                }
+            }
+            .frame(height: 8)
+            if let reset = window.resetAt {
+                Text("於 \(Self.resetFormatter.string(from: reset)) 重置")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private static let resetFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M/d HH:mm"
+        return f
+    }()
+
+    private static func tokenText(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fk", Double(n) / 1_000) }
+        return "\(n)"
     }
 
     // MARK: 已配對裝置
