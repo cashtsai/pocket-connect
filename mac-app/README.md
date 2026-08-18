@@ -10,7 +10,7 @@
 正式底盤(v0.2,可編譯、簽章、公證與安裝):
 - 選單列 App(AppKit agent,`LSUIElement`,無 Dock 圖示)
 - 狀態列:品牌「P」圖示(紅底白 P 的 template 版,自動適應淺/深色),每 8 秒探測 `pocket.tsai.cash` 可達性,連線狀態顯示在滑鼠停留的 tooltip(`Pocket — ● 已連線 / ○ 離線`)
-- 選單:**複製連線網址**、**顯示下載 App QR**(CoreImage 產生)、**啟動/停止服務**、結束
+- 選單:連線/登入狀態、**執行環境**警示、控制台、帳號連結、**下載手機 App QR**(CoreImage 產生)、狀態列隱藏、結束
 - **服務 supervise**:啟動/停止本機 `bridge`(uvicorn)+ `cloudflared`(pocket tunnel)
 - **打包**:`packaging/build_dmg.sh` → `Pocket.app` + `Pocket-<ver>.dmg`
 

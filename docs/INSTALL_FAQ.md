@@ -13,25 +13,52 @@
 3. 到「應用程式」打開 Pocket，選單列（螢幕右上）會出現一個口袋圖示。
 
 ### 2.「無法確認開發者 / 來自未識別的開發者」怎麼辦？
-目前釋出的是 **開發簽章版**，其他 Mac 的 Gatekeeper 第一次會擋。繞法：
+**正式版不會有這個問題。** 從 [Releases](https://github.com/cashtsai/pocket-connect/releases)
+下載的 `.dmg` 已經用 Apple 的 **Developer ID 憑證簽章 + 公證（notarized）並 staple**，
+任何 Mac 雙擊即可安裝。
 
-- **在 Finder 裡對 Pocket 按右鍵（或 Control-點一下）→ 打開 → 再按一次「打開」。**
-- 只需做這一次，之後正常雙擊即可。
-
-> 為什麼要這樣：正式的「雙擊直接開、不跳警告」需要 Apple 的 **Developer ID 憑證 + 公證**，
-> 那條線在準備中。等公開版出來就不用這一步。
+如果你拿到的是自己 build 的 ad-hoc 版本，Gatekeeper 第一次會擋，繞法是
+**在 Finder 裡對 Pocket 按右鍵（或 Control-點一下）→ 打開 → 再按一次「打開」**，
+只需做這一次。
 
 ### 需求
-- macOS 13（Ventura）以上。
-- 這台 Mac 要能跑你的 **Hermes / bridge**（Pocket 是幫你把它對外，不是取代它）。
+- macOS 13（Ventura）以上，Apple Silicon。
+- **Python 3**（Pocket 用它跑 bridge）。沒有的話終端機執行 `xcode-select --install` 即可。
 - 免費（零設定）模式需要這台 Mac **已登入 iCloud**（原因見下）。
+- 想在手機上用 AI，這台 Mac 要自己裝好 **Claude Code** 或 **Codex** CLI 並登入
+  （Pocket 不會替你安裝，但控制台會列出來、附上安裝指令）。
+
+### 2.5 手機端 App
+到 App Store 下載 **Pocket**：<https://apps.apple.com/app/id6787644476>
+（桌面選單列 →「下載手機 App…」也會給你一張可以直接掃的 QR。）
 
 ---
 
 ## 第一次設定
 
-### 3. 登入
-第一次打開會走引導：**用 Apple 登入**。登入後才會出現「配對這台桌機」的 QR。
+### 3. 執行環境檢查（第一關）
+第一次打開，Pocket 會先檢查這台 Mac 的執行環境，列出一張清單：
+
+| 項目 | 說明 |
+|---|---|
+| Python 3 | 沒有的話會給你 `xcode-select --install` 這行指令，複製到終端機跑 |
+| Bridge 程式 | 手機連進來的那個小服務 |
+| 背景服務（LaunchAgent） | 讓 bridge 開機自動跑 |
+| Bridge 服務 | 有沒有在回應 |
+| BRIDGE_TOKEN | 桌面跟 bridge 之間的金鑰（安裝時自動產生） |
+| Claude Code / Codex | 你的 AI 引擎，要自己裝＋登入 |
+
+- 綠勾 = 好了；黃三角 = 還缺但不擋你；紅叉 = 一定要處理。
+- 能自動裝的按 **「一鍵安裝並啟動」** 就好，Pocket 會建好環境、寫好背景服務、
+  啟動並確認它有回應。裝好了會自動往下走。
+- 裝不起來時會顯示錯誤，並可按 **「查看記錄檔」** 打開
+  `~/Library/Logs/Pocket/install.log`。**不會默默失敗。**
+
+> 如果這台 Mac 本來就已經跑著自己的 bridge（埠 8081 有回應），Pocket 會直接沿用它，
+> 不會重裝、也不會搶那個埠。這一關會整排綠勾直接跳過。
+
+### 3.5 登入
+環境過關後：**用 Apple 登入**。登入後會直接出現「配對這台桌機」的 QR。
 （登入 session 存在本機鑰匙圈，不上傳。）
 
 ### 4. 免費模式為什麼一定要開 iCloud？
@@ -45,15 +72,18 @@
 > 已經填了自己的**固定網址**（進階模式，見第 7 題）就不受此限——網址不會變，不需要 iCloud 這條傳遞管道。
 
 ### 5. 找不到金鑰（BRIDGE_TOKEN）？
-Pocket 會自動從你的 Hermes 設定（`ai.studio.hermes-bridge` 的 LaunchAgent）讀金鑰。
-讀不到時，控制台「連線設定」會出現一個 **貼上 BRIDGE_TOKEN** 欄位，把金鑰貼進去、儲存即可。
+Pocket 依序找：控制台手動貼的 → 環境變數 → **Pocket 自己裝的** bridge 的 LaunchAgent
+（`com.pocketconnect.bridge`）→ 你原本就有的 Hermes bridge（`ai.studio.hermes-bridge`）。
+
+用「一鍵安裝」裝的話金鑰會自動產生，不用管。若你接的是自己的 bridge，
+控制台「連線設定」有一個 **貼上 BRIDGE_TOKEN** 欄位，把金鑰貼進去、儲存即可。
 
 ---
 
 ## 連線
 
 ### 6. 手機怎麼連上？
-1. 桌面 Pocket 控制台按「配對新裝置」→ 出現 QR（10 分鐘有效）。
+1. 桌面 Pocket 控制台按「配對新裝置」→ 出現 QR（10 分鐘有效）。登入完成時也會自動出一張。
 2. 手機 App 掃這個 QR，自動完成配對。
 3. 配對成功後，控制台的裝置清單會出現你的手機。
 
@@ -86,12 +116,25 @@ Pocket 會**自動重啟**臨時 tunnel（偵測到非預期結束後幾秒內�
 - 還是不行 → 重新配對一次（第 6 題）。
 
 ### 11. 怎麼把服務停掉？
-選單列口袋圖示 →「停止服務」。這會收掉本機 bridge 與臨時 tunnel。
+bridge 是由系統的 launchd 管的背景服務，**結束 Pocket 不會把它關掉**（這是刻意的：
+你關掉桌面視窗，手機還是連得到）。真的要停：
+
+```bash
+launchctl bootout gui/$(id -u)/com.pocketconnect.bridge
+```
+
+選單列口袋圖示 →「結束」只會關掉 Pocket 本身與它開的臨時 tunnel。
 
 ### 12. 怎麼解除安裝？
-1. 選單列 →「停止服務」→ 結束 Pocket。
-2. 把 `/Applications/Pocket.app` 丟垃圾桶。
-3.（可選）清鑰匙圈裡的 `com.pocketagent.desktop` 項目。
+1. 選單列 →「結束」。
+2. 停掉並移除背景服務：
+   ```bash
+   launchctl bootout gui/$(id -u)/com.pocketconnect.bridge
+   rm -f ~/Library/LaunchAgents/com.pocketconnect.bridge.plist
+   rm -rf ~/Library/Application\ Support/PocketConnect
+   ```
+3. 把 `/Applications/Pocket.app` 丟垃圾桶。
+4.（可選）清 `~/Library/Logs/Pocket` 與鑰匙圈裡的 `com.pocketagent.desktop` 項目。
 
 ---
 
@@ -101,3 +144,6 @@ Pocket 會**自動重啟**臨時 tunnel（偵測到非預期結束後幾秒內�
 - 出正式版本（bump 版號→tag→CI 上傳 Release）：`./packaging/cut_release.sh patch`。
 - **公開發佈（Developer ID + 公證）**：見 `docs/M4_DEVELOPER_ID_SIGNING_SPEC.md` 與
   `mac-app/packaging/pocket-release.env.example`；備好憑證後 `NOTARIZE=1 ./packaging/build_dmg.sh`。
+- **把 bridge 一起打包進去**（讓全新的 Mac 不用自己找 bridge 程式）：
+  `BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh`，預設關閉，說明見
+  `docs/M3_ENV_DETECTION_SPEC.md` §7.4。

@@ -48,6 +48,48 @@ for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
   if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
 done
 
+# ── Bridge payload（M3：全新 Mac 的一鍵安裝）──────────────────────────────────
+# 預設**關閉**。開啟後會把 bridge 原始碼放進 Resources/bridge，App 首次啟動偵測到
+# 環境沒就緒時，就能用它裡面的 deploy/install-local-bridge.sh 完成 per-user 安裝
+# （裝到 ~/Library/Application Support/PocketConnect，label com.pocketconnect.bridge，
+# 絕不碰 production 的 ai.studio.hermes-bridge）。
+#
+#   BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh
+#   BUNDLE_BRIDGE=1 BRIDGE_SOURCE=/path/to/bridge ./packaging/build_dmg.sh
+#
+# ⚠️ 要不要把 bridge 一起發出去是**發行決策**（授權、體積、secrets 稽核），所以不
+# 預設開。沒開的話，一台全新的 Mac 會在「執行環境」清單看到「找不到 Bridge 程式」
+# 這條 blocked 項目 + 說明連結，而不是無聲失敗。
+BUNDLE_BRIDGE="${BUNDLE_BRIDGE:-0}"
+BRIDGE_SOURCE="${BRIDGE_SOURCE:-$HOME/apps/hermes-openwebui-bridge}"
+if [[ "$BUNDLE_BRIDGE" == "1" ]]; then
+  if [[ ! -f "$BRIDGE_SOURCE/bridge.py" ]]; then
+    echo "✗ BUNDLE_BRIDGE=1 但 $BRIDGE_SOURCE 不像 bridge 原始碼（沒有 bridge.py）" >&2
+    exit 1
+  fi
+  if [[ ! -x "$BRIDGE_SOURCE/deploy/install-local-bridge.sh" ]]; then
+    echo "✗ $BRIDGE_SOURCE/deploy/install-local-bridge.sh 不存在或不可執行" >&2
+    exit 1
+  fi
+  echo "▸ bundle bridge payload ← $BRIDGE_SOURCE"
+  mkdir -p "$APPDIR/Contents/Resources/bridge"
+  # 排除 .git / venv / 快取 / 日誌 / 本機環境檔 —— 日誌動輒數十 MB，且可能含對話內容。
+  rsync -a --delete \
+    --exclude ".git" --exclude ".git/" \
+    --exclude "__pycache__" --exclude "*.pyc" \
+    --exclude ".pytest_cache" --exclude "tests" \
+    --exclude "venv" --exclude ".venv" \
+    --exclude "*.log" --exclude "*.log.*" \
+    --exclude ".env" --exclude "*.db" --exclude "*.sqlite*" \
+    "$BRIDGE_SOURCE/" "$APPDIR/Contents/Resources/bridge/"
+  # 安全網：payload 裡不該出現任何 BRIDGE_TOKEN / 私鑰。
+  if grep -rqlE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' "$APPDIR/Contents/Resources/bridge" 2>/dev/null; then
+    echo "✗ bridge payload 裡有私鑰，中止打包" >&2
+    exit 1
+  fi
+  echo "  payload: $(du -sh "$APPDIR/Contents/Resources/bridge" | cut -f1)"
+fi
+
 # Sign so it launches locally. Restricted entitlements always come from the
 # matching provisioning profile; never add them to a distribution signature by
 # hand.
