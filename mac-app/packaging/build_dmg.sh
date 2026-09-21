@@ -74,6 +74,15 @@ if [[ "$BUNDLE_BRIDGE" == "1" ]]; then
   echo "▸ bundle bridge payload ← $BRIDGE_SOURCE"
   mkdir -p "$APPDIR/Contents/Resources/bridge"
   # 排除 .git / venv / 快取 / 日誌 / 本機環境檔 —— 日誌動輒數十 MB，且可能含對話內容。
+  #
+  # 2026-09-21 補剪(v0.3,首次真的 BUNDLE_BRIDGE 出貨前盤查):
+  #   · deploy/ai.studio.*.plist —— **裡面有真 BRIDGE_TOKEN**(production
+  #     launchd plist 的副本被 commit 進 repo)。舊守門只抓 PEM 私鑰,
+  #     這顆會原樣進 DMG = 把 production 鑰匙發給全世界。install 需要的
+  #     只有 install-local-bridge.sh,plist 由它產生。
+  #   · CLAUDE.md / AGENTS.md / docs/ / HANDOFF* —— 內部操作紅線、交接
+  #     文件、內部主機與架構細節,不屬於發行物。
+  #   · *.bak* / *.pre-* —— 手動備份檔(bridge.py.pre-sunset-* 之類)。
   rsync -a --delete \
     --exclude ".git" --exclude ".git/" \
     --exclude "__pycache__" --exclude "*.pyc" \
@@ -81,10 +90,24 @@ if [[ "$BUNDLE_BRIDGE" == "1" ]]; then
     --exclude "venv" --exclude ".venv" \
     --exclude "*.log" --exclude "*.log.*" \
     --exclude ".env" --exclude "*.db" --exclude "*.sqlite*" \
+    --exclude "deploy/*.plist" \
+    --exclude "CLAUDE.md" --exclude "AGENTS.md" \
+    --exclude "docs" --exclude "HANDOFF*" \
+    --exclude "*.bak*" --exclude "*.pre-*" \
     "$BRIDGE_SOURCE/" "$APPDIR/Contents/Resources/bridge/"
-  # 安全網：payload 裡不該出現任何 BRIDGE_TOKEN / 私鑰。
+  # 安全網:payload 裡不該出現任何私鑰或真 token。
   if grep -rqlE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' "$APPDIR/Contents/Resources/bridge" 2>/dev/null; then
     echo "✗ bridge payload 裡有私鑰，中止打包" >&2
+    exit 1
+  fi
+  # token 形狀守門:BRIDGE_TOKEN/TELEGRAM_BOT_TOKEN 後面跟著 ≥20 字的實值
+  # (env 讀取、空值、佔位符不會中)。抓到就列檔中止 —— 寧可打包失敗,
+  # 不可把鑰匙裝進發行物。
+  # `.env.example` 是佔位模板(change-me-…)刻意放行;其餘檔案一律嚴查。
+  if grep -rlE '(BRIDGE_TOKEN|TELEGRAM_BOT_TOKEN|API_KEY)["'"'"'>= ]+[A-Za-z0-9_:-]{20,}' \
+       "$APPDIR/Contents/Resources/bridge" 2>/dev/null \
+       | grep -v '\.env\.example$' | head -5 | grep .; then
+    echo "✗ bridge payload 裡疑似有真 token(上列檔案),中止打包" >&2
     exit 1
   fi
   echo "  payload: $(du -sh "$APPDIR/Contents/Resources/bridge" | cut -f1)"
