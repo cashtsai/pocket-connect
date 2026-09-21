@@ -1,6 +1,7 @@
 import AppKit
 import AuthenticationServices
 import CoreText
+import SwiftUI
 
 // Pocket 品牌色（CIS 五色瑪利歐：紅/奶油/黃/藍/綠）— 桌面 onboarding 用，
 // 對齊 iOS 登入頁的觀感。這裡就地定義，pocket-connect 不依賴 PocketDesign。
@@ -334,6 +335,28 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         appleButton.isEnabled = true
         errorLabel.stringValue = msg
     }
+
+    /// M3 — 執行環境還沒就緒時,擋在歡迎/登入畫面前面。
+    /// 沒有這一關的話,一台全新的 Mac 按下「Apple 登入」只會打到一個不存在的
+    /// 本機 bridge,使用者拿到的是「暫時連不到伺服器」——完全查不出真正原因。
+    func showEnvironment(model: BridgeEnvironmentModel) {
+        container.subviews.forEach { $0.removeFromSuperview() }
+        background.frame = container.bounds
+        background.logoSafeZone = nil
+        container.addSubview(background)
+        let hosting = NSHostingView(rootView:
+            ScrollView {
+                EnvironmentSetupView(model: model, isOnboarding: true)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 28)
+            })
+        hosting.frame = container.bounds
+        hosting.autoresizingMask = [.width, .height]
+        container.addSubview(hosting)
+    }
+
+    /// 環境就緒後回到歡迎/登入畫面。
+    func showWelcome() { buildWelcome() }
 
     /// Called by the delegate on success — swap to the pairing QR screen.
     func showPairing() {

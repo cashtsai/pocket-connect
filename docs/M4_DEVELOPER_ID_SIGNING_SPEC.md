@@ -164,7 +164,21 @@ Apple Developer Portal 已於 2026-07-23 完成：
 ## 5. 後續驗收與發布通路
 
 - 再以另一台全新、未註冊開發裝置的 Mac 重跑一次安裝驗收，確認沒有本機歷史狀態
-  影響首次啟動。
-- `cashtsai/pocket-connect` 目前是 private repository，因此 v0.2 Release 只對 repo
-  成員可下載。要提供一般使用者直接下載，應另設公開的 release-only repo 或正式下載站；
-  不需要公開原始碼或把簽章 secrets 搬到公開 repo。
+  影響首次啟動。**仍未做，是 M4 唯一還開著的驗收項。**
+- ~~`cashtsai/pocket-connect` 目前是 private repository~~ → **2026-08 已轉公開 +
+  Apache 2.0**，`v0.2` Release 任何人都能下載，不需要另設 release-only repo。
+  R2 + 品牌下載網址的方案沒作廢但也未開工，理由見
+  [`PUBLIC_DISTRIBUTION_PLAN.md`](PUBLIC_DISTRIBUTION_PLAN.md) 開頭的更新說明。
+
+---
+
+## 6. 管線複驗紀錄
+
+| 日期 | 驗了什麼 | 結果 |
+|---|---|---|
+| 2026-07-23 | `NOTARIZE=1` 本機建置 + Apple 公證 + CI `v0.2` 發行 | ✅ 見 §2.4 |
+| 2026-08-18 | `./packaging/build_dmg.sh`（ad-hoc 軌，不送公證） | ✅ `swift build -c release` → 嵌入 profile → `codesign` → `codesign --verify --deep --strict` 通過 → `build/dist/Pocket-0.2.dmg`（23,375,585 bytes）。簽章 Authority 為 `Developer ID Application: chia hsiang tsai (4F8B93R3SH)`。 |
+| 2026-08-18 | `BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh`（M3 新增的 bridge payload 開關） | ✅ payload 進 `Contents/Resources/bridge`，含 `deploy/install-local-bridge.sh`，私鑰掃描護欄有效（第一次跑就攔下 `tests/` 裡的假 PEM，已改為排除 `tests/`）。 |
+
+> 沒有重跑公證（`NOTARIZE=1`）：那會真的送一份 build 給 Apple，屬於發行動作，
+> 留給 owner 在出版本時做。簽章與打包路徑本身在 2026-08-18 已確認可跑。

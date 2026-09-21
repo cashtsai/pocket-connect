@@ -16,78 +16,26 @@ struct Config {
     // Fixed Apple web-auth broker. Unlike connectURL/tunnel discovery, Apple's
     // registered return URL cannot change per user or per launch.
     var webAuthURL = "https://pocket.tsai.cash"
-    // Where users download the iOS app (TestFlight public link / App Store).
-    var downloadURL = "https://testflight.apple.com/"   // TODO: real link
+    // Where users download the iOS app (App Store).
+    var downloadURL = "https://apps.apple.com/app/id6787644476"
     // UserDefaults flag marking first-run onboarding as complete.
     let onboardedKey = "pocketConnectOnboarded"
     // Local bridge port — CloudKit hostCandidates (tailnet/LAN URLs) point the
-    // phone straight at it; must match the uvicorn --port below.
-    var bridgePort = 8081
-    // Commands this app supervises. For a shipped installer these get bundled;
-    // for now they point at the local dev setup.
-    var bridge = LaunchSpec(
-        exe: "/opt/homebrew/bin/python3",
-        args: ["-m", "uvicorn", "bridge:app", "--host", "127.0.0.1", "--port", "8081"],
-        cwd: NSString(string: "~/apps/hermes-openwebui-bridge").expandingTildeInPath)
-    var tunnel = LaunchSpec(
-        exe: "/opt/homebrew/bin/cloudflared",
-        args: ["tunnel", "--config", NSString(string: "~/.cloudflared/pocket.yml").expandingTildeInPath, "run", "pocket"],
-        cwd: nil)
+    // phone straight at it. Kept in sync with BridgeInstallLayout so the app,
+    // the LaunchAgent and the QR payload all agree on one port.
+    var bridgePort = BridgeInstallLayout.resolve(
+        home: NSHomeDirectory(),
+        environment: ProcessInfo.processInfo.environment).port
 }
-struct LaunchSpec { var exe: String; var args: [String]; var cwd: String? }
 
-// MARK: - Process supervisor
+// MARK: - Reachability prober
+// 這個 App **不**自己 spawn bridge/cloudflared:bridge 由 launchd 管
+// (見 BridgeBootstrap — 裝 LaunchAgent 才是正確做法,直接 spawn 會跟 launchd 搶埠、
+// 且 App 一關服務就死),cloudflared 由 TunnelManager 管。這裡只剩「通不通」的探測。
 final class Supervisor {
     var onChange: (() -> Void)?
-    /// Fired for anything worth surfacing on the dashboard's ErrorLog
-    /// (design §4.4 "bridge 起不來"): missing executable or an early,
-    /// non-normal process exit. Best-effort — the app keeps running either way.
-    var onLaunchFailure: ((String) -> Void)?
-    private(set) var running = false
-    private var procs: [Process] = []
     private let cfg: Config
     init(_ cfg: Config) { self.cfg = cfg }
-
-    func toggle() { running ? stop() : start() }
-
-    func start() {
-        guard !running else { return }
-        for spec in [cfg.bridge, cfg.tunnel] {
-            guard FileManager.default.isExecutableFile(atPath: spec.exe) else {
-                onLaunchFailure?("找不到可執行檔:\(spec.exe)")
-                continue
-            }
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: spec.exe)
-            p.arguments = spec.args
-            if let cwd = spec.cwd { p.currentDirectoryURL = URL(fileURLWithPath: cwd) }
-            p.terminationHandler = { [weak self] proc in
-                DispatchQueue.main.async {
-                    if proc.terminationStatus != 0 {
-                        self?.onLaunchFailure?("\(spec.exe) 異常結束(exit \(proc.terminationStatus))")
-                    }
-                    self?.refresh()
-                }
-            }
-            do {
-                try p.run()
-                procs.append(p)
-            } catch {
-                onLaunchFailure?("啟動失敗:\(spec.exe) — \(error.localizedDescription)")
-            }
-        }
-        running = !procs.isEmpty
-        onChange?()
-    }
-
-    func stop() {
-        procs.forEach { $0.terminate() }
-        procs.removeAll()
-        running = false
-        onChange?()
-    }
-
-    private func refresh() { running = procs.contains { $0.isRunning }; onChange?() }
 
     // Reachability check: is the public URL answering? (bridge returns 401/403 w/o
     // a token, which still proves the pipe is up.)
@@ -147,15 +95,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     // Onboarding + pairing state.
     private var onboarding: OnboardingWindowController?
-    private var onboardingPairing: PairingCoordinator?
     private var webAppleSignIn: WebAppleSignInCoordinator?
-    private var pairWindow: NSWindow?
-    private var pairWindowView: PairingQRView?
-    private var pairWindowCoordinator: PairingCoordinator?
 
     // M2 — Claude/Codex account linking window (retained so it isn't deallocated
     // while open; recreated on demand from the menu).
     private var accountLinking: AccountLinkingWindowController?
+
+    // M3 — 執行環境偵測 + bridge bootstrap。
+    lazy var bridgeBootstrap = BridgeBootstrap()
+    private var environmentModel: BridgeEnvironmentModel?
+    /// 最近一次偵測的結果（選單顯示 + 登入前的把關）。
+    private(set) var environmentState: BridgeEnvironmentState?
 
     // CloudKit discovery layer (M2a) — nil until setupCloudSync() runs.
     var cloudSync: CloudSyncController?
@@ -179,13 +129,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             button.toolTip = "Pocket"
         }
         supervisor.onChange = { [weak self] in self?.rebuildMenu() }
-        supervisor.onLaunchFailure = { [weak self] message in
-            self?.cloudSync?.logError(level: .error, code: "bridge_launch_failed", message: message)
-        }
         rebuildMenu()
         // periodic reachability poll
         Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.poll() }
         poll()
+
+        // M3 — 每次啟動都跑一次環境健檢（不只首次啟動）。環境會壞掉：使用者可能
+        // 砍了 LaunchAgent、升級系統弄掉 python、或另一個程式占走了埠。
+        refreshEnvironment()
 
         // First-run: show onboarding unless already completed.
         if !UserDefaults.standard.bool(forKey: cfg.onboardedKey) {
@@ -211,6 +162,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
                 self.onConnectURLChanged()
             }
             tunnelManager.start()
+        }
+    }
+
+    /// 重跑一次環境健檢並更新選單。
+    func refreshEnvironment() {
+        bridgeBootstrap.probe { [weak self] _, state in
+            guard let self else { return }
+            self.environmentState = state
+            self.rebuildMenu()
         }
     }
 
@@ -279,6 +239,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         let loginLine = NSMenuItem(title: isSignedIn ? "● 已登入" : "○ 尚未登入", action: nil, keyEquivalent: "")
         loginLine.isEnabled = false
         m.addItem(loginLine)
+        // M3 — 環境沒就緒時，選單就直接說出原因並給入口，別讓使用者自己猜。
+        if let state = environmentState, !state.isReady {
+            let envLine = NSMenuItem(title: "⚠ " + Self.environmentSummary(state),
+                                     action: #selector(showEnvironmentSetup), keyEquivalent: "")
+            m.addItem(envLine)
+        }
         m.addItem(.separator())
         // 未登入 → 只能「登入」；登入後才有「控制台」+「帳號連結」。
         if isSignedIn {
@@ -287,6 +253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         } else {
             m.addItem(NSMenuItem(title: "登入…", action: #selector(showLogin), keyEquivalent: "d"))
         }
+        // 啟動路徑的另一半：手機那頭要先有 App。QR 直接掃到 App Store。
+        m.addItem(NSMenuItem(title: "下載手機 App…", action: #selector(showDownloadQR), keyEquivalent: ""))
         m.addItem(.separator())
         m.addItem(NSMenuItem(title: "狀態列隱藏", action: #selector(hideStatusBar), keyEquivalent: ""))
         m.addItem(NSMenuItem(title: "結束", action: #selector(quit), keyEquivalent: ""))
@@ -296,6 +264,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     /// 未登入時選單的「登入…」入口 → 開登入頁。
     @objc func showLogin() { presentOnboarding() }
+
+    /// M3 —「執行環境」入口。已登入就開控制台（那裡有常駐的環境卡），
+    /// 還沒登入就開引導視窗的環境頁。
+    @objc func showEnvironmentSetup() {
+        if isSignedIn {
+            showDashboard()
+        } else {
+            presentOnboarding()
+        }
+    }
+
+    /// 選單那一行的一句話。
+    static func environmentSummary(_ state: BridgeEnvironmentState) -> String {
+        switch state {
+        case .ready: return "執行環境已就緒"
+        case .readyButNoToken: return "缺 BRIDGE_TOKEN"
+        case .installedNotRunning: return "Bridge 沒在跑"
+        case .needsInstall: return "Bridge 尚未安裝"
+        case .portBusy: return "Bridge 埠被占用"
+        case .missingPython: return "缺 Python 3"
+        case .missingBridgeSource: return "找不到 Bridge 程式"
+        }
+    }
 
     /// 連線網址變了（拿到臨時 tunnel、或使用者改自訂網址）→ 重建 client、更新畫面。
     func onConnectURLChanged() {
@@ -366,9 +357,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         }
     }
 
-    @objc func toggleServices() { supervisor.toggle() }
-
-    @objc func quit() { tunnelManager.stop(); supervisor.stop(); NSApp.terminate(nil) }
+    /// 結束 App。bridge 由 launchd 管、不隨 App 結束（手機要能一直連得到），
+    /// 這裡只收掉 App 自己開的臨時 tunnel。
+    @objc func quit() { tunnelManager.stop(); NSApp.terminate(nil) }
 
     // MARK: Download-app QR (unchanged behaviour, now using shared makeQR).
     @objc func showDownloadQR() {
@@ -423,10 +414,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         controller.flowDelegate = self
         onboarding = controller
         controller.present()
+        gateOnEnvironment(controller)
+    }
+
+    /// M3 — 登入前先把關執行環境。就緒就直接進歡迎頁；沒就緒就顯示檢查清單，
+    /// 等到它變就緒（使用者按了「一鍵安裝」或自己補好後按「重新檢查」）再自動放行。
+    private func gateOnEnvironment(_ c: OnboardingWindowController) {
+        let model = environmentModel ?? BridgeEnvironmentModel(bootstrap: bridgeBootstrap)
+        environmentModel = model
+        model.onBecameReady = { [weak self, weak c] in
+            self?.rebuildMenu()
+            c?.showWelcome()
+        }
+        bridgeBootstrap.probe { [weak self, weak c] _, state in
+            guard let self, let c else { return }
+            self.environmentState = state
+            self.rebuildMenu()
+            if state.isReady {
+                c.showWelcome()
+            } else {
+                c.showEnvironment(model: model)
+            }
+        }
     }
 
     // OnboardingDelegate — the delegate owns the actual auth + pairing calls.
     func onboardingDidTapSignIn(_ c: OnboardingWindowController) {
+        // 環境沒就緒就不要送出登入請求 —— 它會打到不存在的本機 bridge，
+        // 使用者只會看到看不懂的網路錯誤。改成把真正的原因攤開給他看。
+        if let state = environmentState, !state.isReady {
+            c.showSignInError("")
+            if let model = environmentModel { c.showEnvironment(model: model) }
+            return
+        }
         if AppleSignInCoordinator.isAvailableForCurrentBuild {
             startNativeAppleSignIn(c)
         } else {
@@ -496,26 +516,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             rebuildMenu()
             c.window?.close()
             onboarding = nil
+            // M1 spec §2：登入成功後直接看到配對 QR，不要讓使用者自己再去找。
+            // 控制台就是 QR 的家，所以開控制台 + 立刻產碼。
             showDashboard()
+            dashboardModel?.startPairing()
         }
-    }
-
-    private func startOnboardingPairing(_ c: OnboardingWindowController) {
-        c.showPairing()
-        let coordinator = PairingCoordinator(client: bridge, sessionProvider: { Keychain.loadSessionToken() })
-        onboardingPairing = coordinator
-        coordinator.onState = { [weak c] s in c?.pairingView.apply(s) }
-        c.pairingView.onRegenerate = { [weak coordinator] in coordinator?.refresh() }
-        coordinator.refresh()
     }
 
     func onboardingWindowDidClose(_ c: OnboardingWindowController) {
         webAppleSignIn?.cancel()
         webAppleSignIn = nil
-        onboardingPairing?.stop()
-        onboardingPairing = nil
         onboarding = nil
     }
+}
+
+// M3 乾跑出口：POCKET_ENV_DOCTOR=1 只跑環境偵測、印出 JSON 就結束，不開 UI。
+// 把 POCKET_BRIDGE_* 那組路徑指到一個 TEMP prefix，就能在現有機器上重現
+// 「全新 Mac」的每一個分支（缺 python / 缺 bridge / 沒 plist / 已在跑 / 埠被占）。
+if BridgeEnvironmentDoctor.isRequested {
+    BridgeEnvironmentDoctor.runAndExit()
 }
 
 let app = NSApplication.shared

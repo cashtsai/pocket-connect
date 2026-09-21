@@ -87,6 +87,9 @@ final class DashboardViewModel: ObservableObject {
 
     /// AI 引擎(Claude Code / Codex)一鍵連接 — 見 AgentConnect.swift。
     let agents = AgentConnectModel()
+    /// M3 執行環境(bridge 有沒有裝好/跑著)— 見 EnvironmentSetup.swift。
+    /// 共用同一個 agents model,清單與「AI 引擎」卡片才不會講不一樣的話。
+    let environment: BridgeEnvironmentModel
 
     private weak var appDelegate: AppDelegate?
     private var pairCoordinator: PairingCoordinator?
@@ -95,6 +98,8 @@ final class DashboardViewModel: ObservableObject {
 
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
+        self.environment = BridgeEnvironmentModel(bootstrap: appDelegate.bridgeBootstrap,
+                                                  agents: agents)
         self.customURLField = appDelegate.customConnectURL ?? ""   // 一次性載入，別在 refresh 蓋掉使用者打字
     }
 
@@ -110,6 +115,7 @@ final class DashboardViewModel: ObservableObject {
         }
         loadDevices()
         agents.refreshAll()
+        environment.refresh()
     }
 
     func loadDevices() {
@@ -285,6 +291,7 @@ struct DashboardView: View {
                     wordmarkHeader
                     card { pairingSection }
                     card { connectionSection }
+                    card { EnvironmentSetupView(model: model.environment) }
                     card { AgentEnginesSection(model: model.agents) }
                     card { connectionSettingsSection }
                     card { devicesSection }

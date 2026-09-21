@@ -1,4 +1,5 @@
 import Foundation
+import PocketConnectKit
 
 // Talks to the Pocket bridge's app-facing API (APP_BRIDGE_CONTRACT.md):
 //   POST /app/v1/auth/apple   — verify Apple identity token, mint account session
@@ -9,10 +10,14 @@ import Foundation
 
 // MARK: - Bridge bearer token (ported from pocket-pair.py read_token())
 enum BridgeToken {
-    // LaunchAgent plist that carries BRIDGE_TOKEN in its EnvironmentVariables.
-    private static let plistPath = NSString(string: "~/Library/LaunchAgents/ai.studio.hermes-bridge.plist").expandingTildeInPath
     // 使用者在「連線設定」手動貼的金鑰（自動讀不到時用）。
     private static let overrideKey = "pocketBridgeTokenOverride"
+
+    /// 讀到的金鑰 + 它從哪來（UI 要說得出來源，不然使用者無從判斷對不對）。
+    struct Resolved {
+        let token: String
+        let source: BridgeTokenSource
+    }
 
     /// 讓使用者手動設/清金鑰（連線設定的貼上欄位）。
     static func setOverride(_ token: String?) {
@@ -21,27 +26,33 @@ enum BridgeToken {
     }
 
     /// Resolve the bridge master token: 手動覆寫 → env var → LaunchAgent plist。
+    /// plist 依序找 **Pocket 自己裝的** bridge，再退到開發機上既有的 Hermes bridge
+    /// —— 一台全新的 Mac 只會有前者，開發機兩者都有，順序決定「用自己裝的那份」。
     /// Returns nil if missing or an unconfigured placeholder.
-    static func read() -> String? {
-        if let manual = UserDefaults.standard.string(forKey: overrideKey), let s = sanitize(manual) {
-            return s
+    static func resolve(layout: BridgeInstallLayout? = nil) -> Resolved? {
+        if let manual = UserDefaults.standard.string(forKey: overrideKey),
+           let s = BridgeTokenReader.sanitize(manual) {
+            return Resolved(token: s, source: .manualOverride)
         }
-        if let env = ProcessInfo.processInfo.environment["BRIDGE_TOKEN"], !env.isEmpty {
-            return sanitize(env)
+        if let env = ProcessInfo.processInfo.environment["BRIDGE_TOKEN"],
+           let s = BridgeTokenReader.sanitize(env) {
+            return Resolved(token: s, source: .environment)
         }
-        guard let data = FileManager.default.contents(atPath: plistPath),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let envVars = plist["EnvironmentVariables"] as? [String: Any],
-              let token = envVars["BRIDGE_TOKEN"] as? String
-        else { return nil }
-        return sanitize(token)
+        let home = NSHomeDirectory()
+        let effective = layout ?? BridgeInstallLayout.resolve(
+            home: home,
+            environment: ProcessInfo.processInfo.environment,
+            bundledBridgePath: BridgeBootstrap.bundledBridgePath())
+        for candidate in BridgeTokenReader.candidatePlists(layout: effective) {
+            guard let data = FileManager.default.contents(atPath: candidate.path),
+                  let token = BridgeTokenReader.parse(plistData: data) else { continue }
+            return Resolved(token: token, source: candidate.source)
+        }
+        return nil
     }
 
-    private static func sanitize(_ raw: String) -> String? {
-        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.isEmpty || t.lowercased().hasPrefix("change-me") { return nil }
-        return t
-    }
+    /// 舊呼叫點的相容入口 — 只要金鑰字串。
+    static func read() -> String? { resolve()?.token }
 }
 
 // MARK: - Client
