@@ -114,16 +114,20 @@ jobs:
           echo "dmg=mac-app/$DMG" >> "$GITHUB_OUTPUT"
           echo "checksum=mac-app/${DMG}.sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      # 2026-10-05 改成 CI 永不碰正式 release 的資產。
+      #
+      # 事故 ×2:v0.3、v0.4 都是「本機 NOTARIZE=1 BUNDLE_BRIDGE=1 建的正貨
+      # vs CI 搶跑發的空包」賽跑 —— CI 抓不到私有 bridge repo,它建的 DMG
+      # **沒有內建 bridge**,乾淨 Mac 裝完就是死路;v0.3 一度把空包掛上
+      # releases/latest,v0.4 靠手動取消 run 才守住。正式發行流程固定為:
+      # 本機建+公證 → `gh release create` 連資產一起上。CI 從此只當建置
+      # 煙霧測試(swift test + DMG 能不能組起來),產物掛 workflow artifact
+      # 供查驗,不碰 release。
+      - name: Upload build artifact (smoke only — CI never touches release assets)
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: pocket-dmg-smoke-${{ github.ref_name }}
+          path: |
             ${{ steps.artifacts.outputs.dmg }}
             ${{ steps.artifacts.outputs.checksum }}
-          fail_on_unmatched_files: true
-          generate_release_notes: true
-          body: |
-            Pocket ${{ github.ref_name }}
-
-            下載 `.dmg`，將 Pocket 拖進 Applications 後直接開啟。
-            此版本已使用 Developer ID 簽章、Apple 公證並附加 notarization ticket。
+          retention-days: 14
