@@ -23,7 +23,7 @@
 
 ### 需求
 - macOS 13（Ventura）以上，Apple Silicon。
-- **Python 3**（Pocket 用它跑 bridge）。沒有的話終端機執行 `xcode-select --install` 即可。
+- **Python 3.10 以上**（Pocket 用它跑 bridge）。⚠️ macOS 內建的 3.9 **跑不動** —— 用 Homebrew 裝：`brew install python`，或到 [python.org](https://www.python.org/downloads/macos/) 下載安裝器。
 - 免費（零設定）模式需要這台 Mac **已登入 iCloud**（原因見下）。
 - 想在手機上用 AI，這台 Mac 要自己裝好 **Claude Code** 或 **Codex** CLI 並登入
   （Pocket 不會替你安裝，但控制台會列出來、附上安裝指令）。
@@ -41,7 +41,7 @@
 
 | 項目 | 說明 |
 |---|---|
-| Python 3 | 沒有的話會給你 `xcode-select --install` 這行指令，複製到終端機跑 |
+| Python 3.10+ | 沒有(或只有系統內建 3.9)會提示 `brew install python`；裝完重按「重新檢查」 |
 | Bridge 程式 | 手機連進來的那個小服務 |
 | 背景服務（LaunchAgent） | 讓 bridge 開機自動跑 |
 | Bridge 服務 | 有沒有在回應 |

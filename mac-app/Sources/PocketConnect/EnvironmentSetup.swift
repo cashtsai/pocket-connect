@@ -121,7 +121,7 @@ final class BridgeEnvironmentModel: ObservableObject {
         case .some(.installedNotRunning): return "Bridge 已安裝,但沒在跑"
         case .some(.needsInstall): return "還差一步:把 Bridge 裝起來"
         case .some(.portBusy): return "埠被其他程式占用了"
-        case .some(.missingPython): return "需要先裝 Python 3"
+        case .some(.missingPython): return "需要 Python 3.10 以上"
         case .some(.missingBridgeSource): return "找不到 Bridge 程式"
         }
     }

@@ -348,15 +348,18 @@ public enum BridgeChecklist {
 
         // ── Python ──────────────────────────────────────────────────────────
         if let python = probe.pythonPath {
-            items.append(.init(id: "python", title: "Python 3",
+            items.append(.init(id: "python", title: "Python 3.10+",
                                detail: python, status: .ok))
         } else {
+            // 2026-10-05 文案修正:舊版教 `xcode-select --install`,但 CLT 給的
+            // python3 是 3.9 —— bridge 用的 3.10+ 語法會直接 SyntaxError,照舊
+            // 文案走完還是死路。正確路徑是 Homebrew 或 python.org 的新版。
             items.append(.init(
-                id: "python", title: "Python 3",
-                detail: "找不到 python3。裝 Xcode Command Line Tools 就會有(下面這行指令會跳出系統安裝視窗)。",
+                id: "python", title: "Python 3.10+",
+                detail: "找不到 Python 3.10 以上版本(系統內建的 3.9 跑不動 bridge)。用 Homebrew 裝一行搞定,或去 python.org 下載安裝器。",
                 status: .blocked,
                 fixItURL: "https://www.python.org/downloads/macos/",
-                fixItCommand: "xcode-select --install"))
+                fixItCommand: "brew install python"))
         }
 
         // ── bridge 程式來源 ──────────────────────────────────────────────────

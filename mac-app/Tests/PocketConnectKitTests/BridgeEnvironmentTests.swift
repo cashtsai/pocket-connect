@@ -213,7 +213,9 @@ final class BridgeEnvironmentTests: XCTestCase {
         let items = BridgeChecklist.build(state: .missingPython, probe: probe, layout: layout())
         let python = try XCTUnwrap(items.first { $0.id == "python" })
         XCTAssertEqual(python.status, .blocked)
-        XCTAssertEqual(python.fixItCommand, "xcode-select --install")
+        // 2026-10-05 契約改版:舊指引 `xcode-select --install` 給的是 CLT 3.9,
+        // bridge(3.10+ 語法)照樣死 —— 修復指令必須指向裝得到 3.10+ 的路。
+        XCTAssertEqual(python.fixItCommand, "brew install python")
         XCTAssertNotNil(python.fixItURL)
     }
 
