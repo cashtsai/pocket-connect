@@ -72,10 +72,21 @@ final class BridgeBootstrap {
         }
     }
 
-    /// 依候選清單找 python3。
+    /// 依候選清單找 python3 —— **必須 ≥3.10**。
+    ///
+    /// bridge.py 用了 127 處 PEP 604 型別語法(`X | None`),3.9 建的 venv 在
+    /// import 當下就 SyntaxError;而 macOS CLT 的 /usr/bin/python3 正是 3.9
+    /// (2026-10-05 上線前盤查:沒裝 Homebrew 的乾淨 Mac 百分之百踩中,
+    /// 使用者只看到「bridge 起不來」)。寧可回報 missingPython 教他裝新版,
+    /// 也不要選一顆必死的進去。
     func resolvePython() -> String? {
-        layout.pythonCandidates.first { fm.isExecutableFile(atPath: $0) }
+        layout.pythonCandidates.first {
+            fm.isExecutableFile(atPath: $0) && PythonProbe.meetsMinimum($0)
+        }
     }
+
+    // 版本探測本體在 PocketConnectKit(PythonProbe)—— 放 Kit 才進得了
+    // 單元測試(本檔屬執行檔 target,Tests 只掛 Kit)。
 
     /// 依候選清單找 bridge 程式來源。認定標準是目錄裡有 `bridge.py`
     /// (不是只要目錄在就算,免得抓到空目錄後 rsync 出一個跑不起來的服務)。

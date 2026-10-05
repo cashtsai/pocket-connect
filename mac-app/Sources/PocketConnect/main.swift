@@ -283,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         case .installedNotRunning: return "Bridge 沒在跑"
         case .needsInstall: return "Bridge 尚未安裝"
         case .portBusy: return "Bridge 埠被占用"
-        case .missingPython: return "缺 Python 3"
+        case .missingPython: return "缺 Python 3.10+"
         case .missingBridgeSource: return "找不到 Bridge 程式"
         }
     }
