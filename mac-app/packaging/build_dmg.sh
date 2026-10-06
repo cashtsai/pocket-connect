@@ -95,6 +95,27 @@ if [[ "$BUNDLE_BRIDGE" == "1" ]]; then
     --exclude "docs" --exclude "HANDOFF*" \
     --exclude "*.bak*" --exclude "*.pre-*" \
     "$BRIDGE_SOURCE/" "$APPDIR/Contents/Resources/bridge/"
+  # ── payload 消毒(2026-10-06,v0.4.1)─────────────────────────────
+  # v0.4 盤查:bridge 原始碼的註解/docstring/機器特定預設帶著開發者的
+  # persona 名、tailnet IP、私有網域與本機路徑出了門(~117 筆)。bridge
+  # repo 是 production、一律不動 —— 消毒只改 payload 複本(顯式替換表,
+  # 功能性字面值對使用者行為等價:那些 persona 在使用者機器上本來就不存在)。
+  # README 換成出貨版(repo 版是內部運維文件,含拓撲細節)。
+  cp packaging/BRIDGE_README.md "$APPDIR/Contents/Resources/bridge/README.md"
+  python3 packaging/sanitize_bridge_payload.py "$APPDIR/Contents/Resources/bridge"
+  # 消毒後硬守門:任何私人名/私有主機/本機路徑殘留 = 打包失敗。寧可不出貨,
+  # 不可把私人資訊再裝進發行物(新增的洩漏源會在這裡被抓,不會默默出門)。
+  if grep -rniIE 'yuanfang|袁方|善彰|pantianqing|潘天晴|shuijing|水鏡|tsai\.cash|tail905550|100\.67\.0\.12|/Users/xcash|fliper|sendtocash|xcash' \
+       "$APPDIR/Contents/Resources/bridge" 2>/dev/null | head -10 | grep .; then
+    echo "✗ bridge payload 消毒後仍有私人資訊殘留(上列),中止打包" >&2
+    exit 1
+  fi
+  # 消毒不可破壞 Python 語法(替換表只動字串,不動結構;這裡釘死)。
+  if ! python3 -m compileall -q "$APPDIR/Contents/Resources/bridge" >/dev/null 2>&1; then
+    echo "✗ 消毒後 bridge payload 編譯失敗,中止打包" >&2
+    exit 1
+  fi
+  find "$APPDIR/Contents/Resources/bridge" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
   # 安全網:payload 裡不該出現任何私鑰或真 token。
   if grep -rqlE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' "$APPDIR/Contents/Resources/bridge" 2>/dev/null; then
     echo "✗ bridge payload 裡有私鑰，中止打包" >&2
