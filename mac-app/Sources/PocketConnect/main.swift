@@ -111,6 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     var cloudSync: CloudSyncController?
     var cloudStatusText = "—"
 
+    // 自動更新(feed = GitHub releases/latest;見 Updater.swift 的安全鏈)。
+    let updater = Updater()
+
     // Dashboard window (M2c) — lazily created on first "儀表板…" click.
     // Foreground refresh timer runs only while the window is open — a
     // fallback for the CKSubscription push (design §3.2 "前景 fetch 兜底").
@@ -133,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         // periodic reachability poll
         Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.poll() }
         poll()
+        updater.startBackgroundChecks()
 
         // M3 — 每次啟動都跑一次環境健檢（不只首次啟動）。環境會壞掉：使用者可能
         // 砍了 LaunchAgent、升級系統弄掉 python、或另一個程式占走了埠。
@@ -256,6 +260,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         // 啟動路徑的另一半：手機那頭要先有 App。QR 直接掃到 App Store。
         m.addItem(NSMenuItem(title: "下載手機 App…", action: #selector(showDownloadQR), keyEquivalent: ""))
         m.addItem(.separator())
+        // 自動更新:手動入口。背景每 24h 也會查一次(applicationDidFinishLaunching)。
+        let ver = Updater.currentVersion.map { "(\($0))" } ?? ""
+        m.addItem(NSMenuItem(title: "檢查更新…\(ver.isEmpty ? "" : " \(ver)")",
+                             action: #selector(checkForUpdates), keyEquivalent: ""))
         m.addItem(NSMenuItem(title: "狀態列隱藏", action: #selector(hideStatusBar), keyEquivalent: ""))
         m.addItem(NSMenuItem(title: "結束", action: #selector(quit), keyEquivalent: ""))
         m.items.forEach { $0.target = self }
@@ -264,6 +272,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 
     /// 未登入時選單的「登入…」入口 → 開登入頁。
     @objc func showLogin() { presentOnboarding() }
+
+    /// 選單「檢查更新…」。
+    @objc func checkForUpdates() { updater.checkInteractively() }
 
     /// M3 —「執行環境」入口。已登入就開控制台（那裡有常駐的環境卡），
     /// 還沒登入就開引導視窗的環境頁。
@@ -538,6 +549,11 @@ if BridgeEnvironmentDoctor.isRequested {
 }
 
 let app = NSApplication.shared
+// 更新鏈無頭自測(見 Updater.runE2E)— 在 AppKit 起來前攔截,直接跑完退出。
+if CommandLine.arguments.contains("--update-e2e") {
+    exit(Updater.runE2E())
+}
+
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()
