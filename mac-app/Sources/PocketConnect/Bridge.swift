@@ -311,6 +311,32 @@ final class BridgeClient {
         }.resume()
     }
 
+    // MARK: - AI 用量 (bridge token only, no account session)
+
+    /// GET /app/v1/usage — Codex/Claude 本機額度快照。bridge 端自帶 10 秒
+    /// 快取,所以照控制台既有的 30 秒 refresh 輪詢不會造成重複 jsonl 掃描。
+    func fetchUsage(completion: @escaping (Result<UsageSnapshot, Error>) -> Void) {
+        func done(_ r: Result<UsageSnapshot, Error>) { DispatchQueue.main.async { completion(r) } }
+        guard let token = BridgeToken.read() else {
+            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+        }
+        guard let url = URL(string: baseURL + "/app/v1/usage") else {
+            return done(.failure(BridgeError(message: "無效的網址")))
+        }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("PocketConnect/1.0", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err { return done(.failure(err)) }
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let detail = (json?["detail"] as? String) ?? "HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)"
+                return done(.failure(BridgeError(message: detail)))
+            }
+            done(.success(UsageSnapshot(json: json ?? [:])))
+        }.resume()
+    }
+
     // MARK: - Low-level POST returning a JSON object, hopping back to main thread.
     private func post(path: String, body: [String: Any], headers: [String: String],
                       completion: @escaping (Result<[String: Any], Error>) -> Void) {
