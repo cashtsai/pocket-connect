@@ -375,12 +375,24 @@ public enum BridgeChecklist {
         }
 
         // ── LaunchAgent ─────────────────────────────────────────────────────
+        // bridge 已健康但 LaunchAgent 不是我們的(例:主機本來就跑著自己管理的
+        // bridge)→ 這是正常的「外部管理」模式,不是缺件;黃牌會誘使使用者按
+        // 「一鍵安裝」裝出第二套 bridge。
+        let externallyManaged: Bool = {
+            if probe.launchAgentInstalled { return false }
+            switch state {
+            case .ready, .readyButNoToken: return true
+            default: return false
+            }
+        }()
         items.append(.init(
             id: "launchagent", title: "背景服務(LaunchAgent)",
             detail: probe.launchAgentInstalled
                 ? layout.launchAgentPath
-                : "尚未建立 —— 按「一鍵安裝」會自動寫入並啟動。",
-            status: probe.launchAgentInstalled ? .ok : .warning))
+                : (externallyManaged
+                    ? "使用既有的 bridge(外部管理)—— 不需要 Pocket 的 LaunchAgent。"
+                    : "尚未建立 —— 按「一鍵安裝」會自動寫入並啟動。"),
+            status: (probe.launchAgentInstalled || externallyManaged) ? .ok : .warning))
 
         // ── 服務健康 ────────────────────────────────────────────────────────
         switch state {
