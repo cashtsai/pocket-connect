@@ -1,9 +1,18 @@
 import Darwin
 import Foundation
 
-// Builds the Device.hostCandidates list (design §3.1): ordered best-first —
-// tailnet, then LAN, then the public tunnel URL. The phone walks this list and
-// direct-connects to the first reachable bridge; CloudKit never relays traffic.
+// Builds the ordered connection-candidate list — best-first: LAN, then tailnet,
+// then the public tunnel URL. The phone walks this list and direct-connects to
+// the first reachable bridge; nothing relays the traffic on the first two.
+//
+// 兩個消費者:配對 QR 的 `hosts=`(出貨路徑)與 CloudKit 的
+// `Device.hostCandidates`(kernel build 關著)。
+//
+// ⚠️ **順序是 LAN 先、tailnet 後**(2026-10-11 修正,原本相反)。理由:tailnet
+// 候選要**手機自己開著 Tailscale** 才通,LAN 不用;兩個都通的情境(在家 + 手機
+// 有 Tailscale)LAN 直連更快,不必多繞一層 WireGuard。這也讓順序與
+// `pocket-pair.py:candidate_hosts()` 對齊 —— 同一份名單由兩支程式產生,排序
+// 不一致會讓「為什麼這支手機選了另一條路」變成查不出來的問題。
 public enum HostCandidates {
     /// - Parameters:
     ///   - bridgePort: local bridge port (candidates point straight at it).
@@ -18,7 +27,7 @@ public enum HostCandidates {
                 lan.append("http://\(ip):\(bridgePort)")
             }
         }
-        var out = tailnet + lan
+        var out = lan + tailnet
         if let tunnelURL, !tunnelURL.isEmpty { out.append(tunnelURL) }
         return out
     }
