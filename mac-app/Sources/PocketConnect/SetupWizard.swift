@@ -114,40 +114,7 @@ final class SetupWizardModel: ObservableObject {
         rebuild()
     }
 
-    /// 乾跑出口(同 POCKET_ENV_DOCTOR 的精神):這台開發機的 CC/CX 本來就登入好,
-    /// 不可能在上面重現「使用者沒登入」的畫面,所以留一個**只在環境變數存在時**
-    /// 生效的覆寫,用來驗證 ④⑤⑥ 的每一種樣子。正式啟動完全不走這條。
-    ///   POCKET_WIZARD_FAKE_AGENTS = none | notinstalled | claude | codex | checking | both
-    ///                             | flip(前 10 秒都沒登入,之後兩個都好 —— 用來驗
-    ///                               「使用者在別的視窗登入完,清單自己轉綠」)
-    private static let fakeClock = Date()
-
-    private static var fakeAgents: AgentAuthSnapshot? {
-        func a(_ installed: Bool, _ loggedIn: Bool?, _ account: String? = nil) -> AgentAuthSnapshot.Agent {
-            .init(installed: installed, loggedIn: loggedIn, account: account)
-        }
-        switch ProcessInfo.processInfo.environment["POCKET_WIZARD_FAKE_AGENTS"] {
-        case "none":          return .init(claude: a(true, false), codex: a(true, false))
-        case "notinstalled":  return .init(claude: a(false, nil), codex: a(false, nil))
-        case "claude":        return .init(claude: a(true, true, "cash@tsai.cash · max"), codex: a(false, nil))
-        case "codex":         return .init(claude: a(true, false), codex: a(true, true, "Logged in using ChatGPT"))
-        case "checking":      return .init(claude: a(true, nil), codex: a(true, nil))
-        case "both":          return .init(claude: a(true, true, "cash@tsai.cash · max"),
-                                           codex: a(true, true, "Logged in using ChatGPT"))
-        case "flip":
-            return Date().timeIntervalSince(fakeClock) < 10
-                ? .init(claude: a(true, false), codex: a(false, nil))
-                : .init(claude: a(true, true, "cash@tsai.cash · max"),
-                        codex: a(true, true, "Logged in using ChatGPT"))
-        default:              return nil
-        }
-    }
-
     private func refreshAgents() {
-        if let fake = Self.fakeAgents {
-            agents = fake
-            return rebuild()
-        }
         bridgeClient().fetchAgentAuth { [weak self] result in
             guard let self else { return }
             switch result {

@@ -622,7 +622,8 @@ if BridgeEnvironmentDoctor.isRequested {
 }
 
 // 引導精靈的畫面乾跑出口:POCKET_WIZARD_SHOT=/path/out.png 把六列清單渲染成 PNG
-// 就結束(不開真視窗、不進 Dock)。配 POCKET_WIZARD_FAKE_AGENTS 可以重現每一種狀態。
+// 就結束(不開真視窗、不進 Dock)。各種引擎狀態的樣子由 SetupWizardTests 覆蓋 ——
+// 假資料覆寫鉤子已從產品碼移除(測試鉤子不該長在出貨路徑上)。
 if let shotPath = WizardShot.requestedPath {
     WizardShot.runAndExit(path: shotPath)
 }
