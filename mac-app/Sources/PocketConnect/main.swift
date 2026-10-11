@@ -107,6 +107,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     /// 最近一次偵測的結果（選單顯示 + 登入前的把關）。
     private(set) var environmentState: BridgeEnvironmentState?
 
+    // 首次安裝引導精靈(六列檢查清單)。QR 的閘門住在這裡 —— 見 SetupWizard.swift。
+    private var wizardModel: SetupWizardModel?
+    private var wizardAgents: AgentConnectModel?
+    /// 最近一次算出來的 QR 閘門。選單的「配對新裝置」也要吃這個,
+    /// 不然使用者關掉引導視窗、從選單繞進去,就又能掃到一個沒引擎的空殼。
+    private(set) var qrGate: QRGate = .waitingBridge
+
     // CloudKit discovery layer (M2a) — nil until setupCloudSync() runs.
     var cloudSync: CloudSyncController?
     var cloudStatusText = "—"
@@ -175,6 +182,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             guard let self else { return }
             self.environmentState = state
             self.rebuildMenu()
+            // QR 閘門要跟著環境走(不只在引導視窗開著時才算)。bridge 沒活就不必問
+            // 引擎 —— 問不準,而且擋住的理由本來就在前面那一列。
+            guard state.isReady else { return self.qrGate = .waitingBridge }
+            self.bridge.fetchAgentAuth { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let snapshot):
+                    self.qrGate = snapshot.hasUsableAgent
+                        ? .ready
+                        : (snapshot.isStillChecking ? .checkingAgents : .noUsableAgent)
+                case .failure:
+                    // 問不到就別改判決(避免網路抖一下就把能用的使用者關在外面)。
+                    break
+                }
+            }
         }
     }
 
@@ -401,8 +423,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     // MARK: 配對新裝置 — 開控制台並在裡面內嵌產生 QR（不再另開視窗）。
     @objc func showPairingQR() {
         guard isSignedIn else { presentOnboarding(); return }
-        showDashboard()
-        dashboardModel?.startPairing()
+        // 閘門也守這裡:沒有任何 AI 引擎登入好就別發 QR,否則手機配對「成功」之後
+        // 進 Claude Code 分頁是鎖頭,使用者只會覺得產品壞了。改成回引導精靈補齊。
+        //
+        // 現場重新問一次(不吃快取的舊判決):bridge 端自己有 60s 快取,成本很低。
+        // 問不到時 fail-open —— 網路抖一下不該把本來能用的人關在門外。
+        bridge.fetchAgentAuth { [weak self] result in
+            guard let self else { return }
+            if case .success(let snapshot) = result,
+               !snapshot.hasUsableAgent, !snapshot.isStillChecking {
+                self.qrGate = .noUsableAgent
+                return self.presentOnboarding()
+            }
+            self.qrGate = .ready
+            self.showDashboard()
+            self.dashboardModel?.startPairing()
+        }
     }
 
     // MARK: Onboarding
@@ -428,34 +464,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         gateOnEnvironment(controller)
     }
 
-    /// M3 — 登入前先把關執行環境。就緒就直接進歡迎頁；沒就緒就顯示檢查清單，
-    /// 等到它變就緒（使用者按了「一鍵安裝」或自己補好後按「重新檢查」）再自動放行。
+    /// 登入前先把關 —— 現在把的不只是 bridge,而是整條「掃上去馬上用」的鏈:
+    /// ① python ② bridge ③ 對外通道 ④ Claude Code ⑤ Codex ⑥ QR。
+    /// 六列該綠的綠了才放人去登入/掃 QR;還沒好就停在引導精靈上,每一列自己給下一步。
     private func gateOnEnvironment(_ c: OnboardingWindowController) {
-        let model = environmentModel ?? BridgeEnvironmentModel(bootstrap: bridgeBootstrap)
-        environmentModel = model
-        model.onBecameReady = { [weak self, weak c] in
-            self?.rebuildMenu()
-            c?.showWelcome()
+        let wizard = setupWizard()
+        wizard.onGateOpened = { [weak self] in
+            guard let self else { return }
+            self.qrGate = .ready
+            self.rebuildMenu()
+            // 清單剛剛才全部過關 → 不自動跳走,讓使用者看到「準備好了」的收尾,
+            // 他自己按 ⑥ 那顆鈕才往下走(onRequestQR)。
         }
-        bridgeBootstrap.probe { [weak self, weak c] _, state in
+        wizard.onRequestQR = { [weak c] in c?.showWelcome() }
+        // 先探一次:整條鏈本來就通的機器直接看到登入頁,不要多一個畫面擋路;
+        // 只要有一列沒過(含「AI 引擎都沒登入」)就把清單攤開。
+        wizard.onFirstEvaluation = { [weak self, weak c] allows in
             guard let self, let c else { return }
+            self.qrGate = allows ? .ready : .noUsableAgent
+            self.rebuildMenu()
+            if allows { c.showWelcome() } else { c.showWizard(model: wizard) }
+        }
+        wizard.evaluateOnce()
+    }
+
+    /// 引導精靈的 model(選單與引導視窗共用同一顆,狀態才不會兩邊講不一樣的話)。
+    private func setupWizard() -> SetupWizardModel {
+        if let wizardModel { return wizardModel }
+        let agents = wizardAgents ?? AgentConnectModel()
+        wizardAgents = agents
+        let environment = environmentModel
+            ?? BridgeEnvironmentModel(bootstrap: bridgeBootstrap, agents: agents)
+        environmentModel = environment
+        environment.onBecameReady = { [weak self] in self?.rebuildMenu() }
+        let model = SetupWizardModel(
+            environment: environment,
+            agentConnect: agents,
+            bridgeClient: { [weak self] in
+                self?.bridge ?? BridgeClient(baseURL: "http://127.0.0.1:\(BridgeInstallLayout.defaultPort)")
+            },
+            // ③ 只准報「實測連得上」的公網網址 —— 連不上就老實說只能在同一個網路用。
+            verifiedTunnelURL: { [weak self] in
+                guard let self, self.reachable else { return nil }
+                return self.effectiveConnectURL
+            },
+            bridgePort: cfg.bridgePort)
+        // 精靈每探一次,選單那一行就跟著更新(不然使用者在精靈裡裝好了 bridge,
+        // 選單還在說「Bridge 尚未安裝」)。
+        model.onBridgeProbed = { [weak self] state in
+            guard let self else { return }
             self.environmentState = state
             self.rebuildMenu()
-            if state.isReady {
-                c.showWelcome()
-            } else {
-                c.showEnvironment(model: model)
-            }
         }
+        wizardModel = model
+        return model
     }
 
     // OnboardingDelegate — the delegate owns the actual auth + pairing calls.
     func onboardingDidTapSignIn(_ c: OnboardingWindowController) {
-        // 環境沒就緒就不要送出登入請求 —— 它會打到不存在的本機 bridge，
-        // 使用者只會看到看不懂的網路錯誤。改成把真正的原因攤開給他看。
-        if let state = environmentState, !state.isReady {
+        // 清單還沒過關就不要送出登入請求。舊版只擋 bridge(不然登入會打到一個不存在
+        // 的本機 bridge,使用者只看到看不懂的網路錯誤);現在整條鏈都擋,因為登入完
+        // 下一步就是 QR,而沒引擎的 QR 掃上去是空殼。
+        let wizard = setupWizard()
+        if !wizard.plan.gate.allowsQR {
             c.showSignInError("")
-            if let model = environmentModel { c.showEnvironment(model: model) }
+            c.showWizard(model: wizard)
             return
         }
         if AppleSignInCoordinator.isAvailableForCurrentBuild {
@@ -546,6 +619,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
 // 「全新 Mac」的每一個分支（缺 python / 缺 bridge / 沒 plist / 已在跑 / 埠被占）。
 if BridgeEnvironmentDoctor.isRequested {
     BridgeEnvironmentDoctor.runAndExit()
+}
+
+// 引導精靈的畫面乾跑出口:POCKET_WIZARD_SHOT=/path/out.png 把六列清單渲染成 PNG
+// 就結束(不開真視窗、不進 Dock)。配 POCKET_WIZARD_FAKE_AGENTS 可以重現每一種狀態。
+if let shotPath = WizardShot.requestedPath {
+    WizardShot.runAndExit(path: shotPath)
 }
 
 let app = NSApplication.shared

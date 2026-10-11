@@ -337,6 +337,36 @@ final class BridgeClient {
         }.resume()
     }
 
+    // MARK: - AI 引擎登入狀態 (引導精靈的 ④⑤)
+
+    /// GET /app/v1/agents/auth — **唯讀**問 bridge「Claude Code / Codex 在這台機器上
+    /// 裝了沒、登入了沒」。
+    ///
+    /// 為什麼不是桌面自己 spawn `claude auth status`:bridge 才知道**它自己那個家目錄**
+    /// 登入了沒(Codex 走隔離的 CODEX_HOME)。桌面問共用家目錄會給出假綠燈 —— 看起來
+    /// 登入了,手機掃上去還是鎖頭。bridge 端自帶 60 秒快取且永不阻塞請求。
+    func fetchAgentAuth(completion: @escaping (Result<AgentAuthSnapshot, Error>) -> Void) {
+        func done(_ r: Result<AgentAuthSnapshot, Error>) { DispatchQueue.main.async { completion(r) } }
+        guard let token = BridgeToken.read() else {
+            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+        }
+        guard let url = URL(string: baseURL + "/app/v1/agents/auth") else {
+            return done(.failure(BridgeError(message: "無效的網址")))
+        }
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("PocketConnect/1.0", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err { return done(.failure(err)) }
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(status), let data,
+                  let snapshot = AgentAuthSnapshot.parse(data) else {
+                return done(.failure(BridgeError(message: "HTTP \(status)")))
+            }
+            done(.success(snapshot))
+        }.resume()
+    }
+
     // MARK: - Low-level POST returning a JSON object, hopping back to main thread.
     private func post(path: String, body: [String: Any], headers: [String: String],
                       completion: @escaping (Result<[String: Any], Error>) -> Void) {

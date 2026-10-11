@@ -22,6 +22,8 @@ final class BridgeEnvironmentModel: ObservableObject {
 
     /// 環境從「沒就緒」變成「就緒」時呼叫一次(首次啟動用來自動往下走)。
     var onBecameReady: (() -> Void)?
+    /// **每一次**探測完都呼叫(引導精靈要據此重算六列,不只在狀態翻轉的那一刻)。
+    var onProbed: ((BridgeEnvironmentProbe, BridgeEnvironmentState) -> Void)?
 
     let bootstrap: BridgeBootstrap
     /// AI 引擎狀態的來源。控制台會傳既有的 model 進來,兩邊才不會講不一樣的話。
@@ -49,6 +51,7 @@ final class BridgeEnvironmentModel: ObservableObject {
                 self.onBecameReady?()
             }
             if !state.isReady { self.wasReady = false }
+            self.onProbed?(probe, state)
         }
     }
 

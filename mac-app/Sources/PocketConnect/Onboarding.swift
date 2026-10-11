@@ -336,30 +336,51 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         errorLabel.stringValue = msg
     }
 
-    /// M3 — 執行環境還沒就緒時,擋在歡迎/登入畫面前面。
-    /// 沒有這一關的話,一台全新的 Mac 按下「Apple 登入」只會打到一個不存在的
-    /// 本機 bridge,使用者拿到的是「暫時連不到伺服器」——完全查不出真正原因。
-    func showEnvironment(model: BridgeEnvironmentModel) {
+    /// 首次安裝引導精靈(六列檢查清單)。擋在歡迎/登入畫面前面。
+    ///
+    /// 為什麼擋得這麼前面:
+    ///   • 沒有這一關,一台全新的 Mac 按下「Apple 登入」只會打到一個不存在的本機
+    ///     bridge,使用者拿到的是「暫時連不到伺服器」—— 完全查不出真正原因。
+    ///   • 2026-10-11 補:連 AI 引擎有沒有登入也擋在這裡。不擋的話配對會「成功」,
+    ///     但手機進 Claude Code 分頁是鎖頭或空白,使用者同樣不知道為什麼。
+    func showWizard(model: SetupWizardModel) {
+        // 清單比舊的環境頁長(六列),視窗先長高一點,免得最重要的 ⑥ 被切掉。
+        resizeContent(height: 640)
         container.subviews.forEach { $0.removeFromSuperview() }
         background.frame = container.bounds
         background.logoSafeZone = nil
         container.addSubview(background)
         let hosting = NSHostingView(rootView:
             ScrollView {
-                EnvironmentSetupView(model: model, isOnboarding: true)
+                SetupWizardView(model: model, environment: model.environment)
                     .padding(.horizontal, 22)
-                    .padding(.vertical, 28)
+                    .padding(.vertical, 24)
             })
         hosting.frame = container.bounds
         hosting.autoresizingMask = [.width, .height]
         container.addSubview(hosting)
     }
 
-    /// 環境就緒後回到歡迎/登入畫面。
-    func showWelcome() { buildWelcome() }
+    /// 視窗高度隨頁面需要調整(錨在視窗上緣,不要往螢幕外長)。
+    private func resizeContent(height: CGFloat) {
+        guard let window, abs(container.bounds.height - height) > 1 else { return }
+        var frame = window.frame
+        let delta = height - window.contentRect(forFrameRect: frame).height
+        frame.size.height += delta
+        frame.origin.y -= delta
+        window.setFrame(frame, display: true, animate: false)
+        container.frame = NSRect(x: 0, y: 0, width: container.bounds.width, height: height)
+    }
+
+    /// 清單過關後回到歡迎/登入畫面。
+    func showWelcome() {
+        resizeContent(height: 480)
+        buildWelcome()
+    }
 
     /// Called by the delegate on success — swap to the pairing QR screen.
     func showPairing() {
+        resizeContent(height: 480)   // 配對頁的版面是照 480 排的絕對座標
         container.subviews.forEach { $0.removeFromSuperview() }
         background.frame = container.bounds
         background.logoSafeZone = nil                    // 配對頁無 logo → 完整雲背景（非特規）
