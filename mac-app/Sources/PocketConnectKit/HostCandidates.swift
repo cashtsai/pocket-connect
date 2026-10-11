@@ -44,7 +44,9 @@ public enum HostCandidates {
         return parts
     }
 
-    private static func localIPv4Addresses() -> [String] {
+    /// 本機 up 且非 loopback 的 IPv4(含 tailnet 的 100.64/10)。
+    /// public:引導精靈的「③ 對外通道」要拿這份原始資料去組 ReachabilityReport。
+    public static func localIPv4Addresses() -> [String] {
         var addrs: [String] = []
         var head: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&head) == 0 else { return addrs }
