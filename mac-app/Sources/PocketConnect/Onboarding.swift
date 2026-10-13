@@ -1,6 +1,7 @@
 import AppKit
 import AuthenticationServices
 import CoreText
+import PocketConnectKit
 import SwiftUI
 
 // Pocket 品牌色（CIS 五色瑪利歐：紅/奶油/黃/藍/綠）— 桌面 onboarding 用，
@@ -114,7 +115,19 @@ final class PairingCoordinator {
             case .failure(let e):
                 self.emit(.error(e.localizedDescription.isEmpty ? "\(e)" : "\(e)"))
             case .success(let pair):
-                let payload = pairingPayload(scheme: self.client.scheme, host: self.lastPayloadHost, code: pair.code)
+                // v2:把本機的候選(LAN → tailnet → 公網 tunnel)一起寫進 QR,
+                // 讓手機在家直連、出門自動退回過路 —— 使用者零操作。
+                // tunnelURL 就是 client 現在連的那個公網位址,擺最後當保底。
+                let port = BridgeInstallLayout.resolve(
+                    home: NSHomeDirectory(),
+                    environment: ProcessInfo.processInfo.environment).port
+                let candidates = HostCandidates.gather(
+                    bridgePort: port,
+                    tunnelURL: "\(self.client.scheme)://\(self.lastPayloadHost)")
+                let payload = pairingPayload(scheme: self.client.scheme,
+                                             host: self.lastPayloadHost,
+                                             code: pair.code,
+                                             hosts: candidates)
                 let img = makeQR(payload, size: 320)
                 self.startCountdown(from: pair.ttl, image: img)
             }

@@ -13,11 +13,3 @@ func makeQR(_ string: String, size: CGFloat) -> NSImage {
     let rep = NSCIImageRep(ciImage: scaled)
     let img = NSImage(size: rep.size); img.addRepresentation(rep); return img
 }
-
-// Build the pairing QR payload — MUST stay identical to pocket-pair.py:
-//   pocket://pair?scheme=<scheme>&host=<host>&code=<code>
-func pairingPayload(scheme: String, host: String, code: String) -> String {
-    let allowed = CharacterSet.urlQueryAllowed
-    func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s }
-    return "pocket://pair?scheme=\(enc(scheme))&host=\(enc(host))&code=\(enc(code))"
-}
