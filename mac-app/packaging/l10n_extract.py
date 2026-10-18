@@ -68,6 +68,27 @@ def scan():
 
 INTERP = re.compile(r'\\\((?:[^()]|\([^()]*\))*\)')
 
+SWIFT_ESC = {"n": "\n", "t": "\t", "0": "\0", "\\": "\\", '"': '"', "'": "'"}
+
+def unescape_swift(s):
+    """把 Swift **原始碼文字**裡的跳脫序列解成執行期真正的字元。
+
+    ⚠️ 必要性:`"…。\\n\\n之後…"` 在原始碼裡是 6 個字元,但執行期 key 含兩個
+    **真正的換行**。不解碼的話 .strings 的 key 會寫成 `\\\\n`(跳脫過的反斜線
+    加 n),查表永遠落空 —— 而且回退就是中文,看起來一切正常。
+    (2026-10-18 實測:多行字串整批翻了但一條都沒生效。)
+    """
+    out = []
+    i = 0
+    while i < len(s):
+        if s[i] == "\\" and i + 1 < len(s):
+            out.append(SWIFT_ESC.get(s[i + 1], s[i + 1]))
+            i += 2
+        else:
+            out.append(s[i])
+            i += 1
+    return "".join(out)
+
 def runtime_key(src):
     """把 Swift 原始碼裡的字面字串轉成**執行期真正的 key**。
 
@@ -75,7 +96,7 @@ def runtime_key(src):
     也必須是 `%@`，否則查表永遠落空而且不會有人發現（因為回退就是中文原字串，
     看起來一切正常）。這個坑第一次 sync 就踩到了。
     """
-    return INTERP.sub("%@", src)
+    return unescape_swift(INTERP.sub("%@", src))
 
 def esc(s):
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
