@@ -402,7 +402,7 @@ public enum BridgeChecklist {
         case .portBusy(let occupant):
             items.append(.init(
                 id: "health", title: L10n.t("Bridge 服務"),
-                detail: L10n.t("埠 \(layout.port) 已被其他程式占用(\(occupant.command),PID \(occupant.pid)),而且它不是 Pocket 裝的。Pocket 不會覆蓋它 —— 請先停掉那個程式,或改用其他埠。"),
+                detail: L10n.t("埠 \(String(layout.port)) 已被其他程式占用(\(occupant.command),PID \(String(occupant.pid))),而且它不是 Pocket 裝的。Pocket 不會覆蓋它 —— 請先停掉那個程式,或改用其他埠。"),
                 status: .blocked,
                 fixItCommand: "lsof -nP -iTCP:\(layout.port) -sTCP:LISTEN"))
         case .installedNotRunning:

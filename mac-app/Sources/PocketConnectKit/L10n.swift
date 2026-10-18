@@ -28,6 +28,21 @@ import Foundation
 ///
 /// `L10n.t("找不到 \(name)")` 的 key 會是 `找不到 %@` —— 與 `.strings` 的
 /// 格式標記一致。這是 `String.LocalizationValue` 自動做的,不要自己拼。
+///
+/// ## ⚠️ 數字一定要先轉成 String
+///
+/// `String.LocalizationValue` 對 `Int` 會做**在地化數字格式**,也就是加千分位:
+///
+///     String(localized: "埠 \(8081) 被 \(4242) 占用")
+///     → "埠 8,081 被 4,242 占用"        ← 實測
+///
+/// 對 PID、port、exit code、OSStatus 這種**識別碼**來說那是錯的 ——
+/// 使用者照著複製 `lsof -nP -iTCP:8,081` 會是廢的。
+///
+/// 所以:**插值數字一律寫 `\(String(port))`,不要寫 `\(port)`。**
+/// (2026-10-18 實測踩到:`BridgeEnvironmentTests` 的
+///  `testPortBusyChecklistNamesTheOccupantAndHowToLookItUp` 當場紅,
+///  因為 detail 裡的 PID 變成 `4,242`。測試擋下了一個會出貨的錯。)
 public enum L10n {
     public static func t(_ key: String.LocalizationValue) -> String {
         String(localized: key)

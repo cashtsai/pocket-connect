@@ -378,7 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
                 return L10n.t("暫時連不到伺服器,請稍後再試。")
             default:
-                return L10n.t("登入連線出錯（\(urlErr.code.rawValue)）,請再試一次。")
+                return L10n.t("登入連線出錯（\(String(urlErr.code.rawValue))）,請再試一次。")
             }
         }
         return L10n.t("登入失敗:\(e.localizedDescription)")
@@ -617,7 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         case .success(let session):
             let status = Keychain.saveSessionToken(session.sessionToken)
             guard status == errSecSuccess else {
-                return c.showSignInError(L10n.t("無法寫入 Keychain (OSStatus \(status))"))
+                return c.showSignInError(L10n.t("無法寫入 Keychain (OSStatus \(String(status)))"))
             }
             UserDefaults.standard.set(true, forKey: cfg.onboardedKey)
             rebuildMenu()

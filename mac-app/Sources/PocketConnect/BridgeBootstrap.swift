@@ -192,9 +192,9 @@ final class BridgeBootstrap {
             pipe.fileHandleForReading.readabilityHandler = nil
 
             guard process.terminationStatus == 0 else {
-                emit(L10n.t("✗ 安裝腳本失敗(exit \(process.terminationStatus))"))
+                emit(L10n.t("✗ 安裝腳本失敗(exit \(String(process.terminationStatus)))"))
                 return finish(.failure(BootstrapError(
-                    message: L10n.t("安裝失敗(exit \(process.terminationStatus))。記錄檔:\(self.layout.installLogPath)"))))
+                    message: L10n.t("安裝失敗(exit \(String(process.terminationStatus)))。記錄檔:\(self.layout.installLogPath)"))))
             }
 
             emit(L10n.t("▸ 等待 bridge 回應 \(self.layout.healthURL)"))

@@ -44,3 +44,47 @@ final class SharedFallbackHostTests: XCTestCase {
                        "候選清單裡不該有共用後備網域：\(out)")
     }
 }
+
+/// 本地化的兩個不變量（2026-10-18）。
+final class L10nInvariantTests: XCTestCase {
+
+    /// `String.LocalizationValue` 對 Int 會做在地化數字格式（加千分位）。
+    /// 對 PID / port / exit code 這種識別碼來說那是**錯的** ——
+    /// 使用者照著複製 `lsof -nP -iTCP:8,081` 會是廢的。
+    ///
+    /// 這條先證明那個行為真的存在（免得有人覺得我在防一個想像中的問題），
+    /// 再要求原始碼裡不准有裸的數字插值。
+    func testIntegerInterpolationWouldBeGroupSeparated() {
+        XCTAssertEqual(String(localized: "port \(8081)"), "port 8,081",
+                       "若這條變了，代表 Foundation 的行為改了，下面那條可以放寬")
+        XCTAssertEqual(String(localized: "port \(String(8081))"), "port 8081",
+                       "轉成 String 就不會被格式化 —— 這是正確寫法")
+    }
+
+    /// 原始碼掃描：`L10n.t` 裡不准出現已知的數字插值。
+    func testNoBareNumericInterpolationInSources() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // PocketConnectKitTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // mac-app
+            .appendingPathComponent("Sources")
+        let fm = FileManager.default
+        guard let walker = fm.enumerator(at: root, includingPropertiesForKeys: nil) else {
+            return XCTFail("走不到 Sources")
+        }
+        // 已知會是數字的插值表達式。新增數字欄位時請一併加進來。
+        let numeric = ["\\(layout.port)", "\\(occupant.pid)", "\\(process.terminationStatus)",
+                       "\\(status)", "\\(urlErr.code.rawValue)", "\\(secs)", "\\(attempt)"]
+        var bad: [String] = []
+        for case let url as URL in walker where url.pathExtension == "swift" {
+            guard let src = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            for line in src.split(separator: "\n") where line.contains("L10n.t(") {
+                for n in numeric where line.contains(n) {
+                    bad.append("\(url.lastPathComponent): \(n)")
+                }
+            }
+        }
+        XCTAssertTrue(bad.isEmpty,
+                      "L10n.t 裡有裸的數字插值，會被加千分位：\(bad)")
+    }
+}
