@@ -105,9 +105,9 @@ public struct ReachabilityReport: Equatable {
 
         public var displayName: String {
             switch self {
-            case .lan: return "同網路直連"
-            case .tailnet: return "Tailscale 私網"
-            case .tunnel: return "公網通道"
+            case .lan: return L10n.t("同網路直連")
+            case .tailnet: return L10n.t("Tailscale 私網")
+            case .tunnel: return L10n.t("公網通道")
             }
         }
     }
@@ -166,12 +166,12 @@ public enum SetupWizardStep: String, CaseIterable {
 
     public var title: String {
         switch self {
-        case .python: return "Python 3.10 以上"
-        case .bridge: return "Bridge 已安裝並在跑"
-        case .reach: return "手機怎麼連到這台"
+        case .python: return L10n.t("Python 3.10 以上")
+        case .bridge: return L10n.t("Bridge 已安裝並在跑")
+        case .reach: return L10n.t("手機怎麼連到這台")
         case .claude: return "Claude Code"
         case .codex: return "Codex"
-        case .qr: return "配對 QR"
+        case .qr: return L10n.t("配對 QR")
         }
     }
 }
@@ -188,13 +188,13 @@ public enum SetupWizardAction: Equatable {
 
     public var title: String {
         switch self {
-        case .installBridge: return "一鍵安裝並啟動"
-        case .startBridge: return "啟動 Bridge"
-        case .pasteToken: return "打開連線設定"
-        case .installAgent(let cli): return "自動安裝 \(cli.displayName)"
-        case .loginAgent(let cli): return "登入 \(cli.displayName)"
-        case .recheck: return "重新檢查"
-        case .openQR: return "好了,拿手機掃這個"
+        case .installBridge: return L10n.t("一鍵安裝並啟動")
+        case .startBridge: return L10n.t("啟動 Bridge")
+        case .pasteToken: return L10n.t("打開連線設定")
+        case .installAgent(let cli): return L10n.t("自動安裝 \(cli.displayName)")
+        case .loginAgent(let cli): return L10n.t("登入 \(cli.displayName)")
+        case .recheck: return L10n.t("重新檢查")
+        case .openQR: return L10n.t("好了,拿手機掃這個")
         }
     }
 }
@@ -238,13 +238,13 @@ public enum QRGate: Equatable {
     public var message: String {
         switch self {
         case .ready:
-            return "都好了 —— 拿手機掃下面這個 QR 就能開始用。"
+            return L10n.t("都好了 —— 拿手機掃下面這個 QR 就能開始用。")
         case .waitingBridge:
-            return "先把上面的 Bridge 弄好,手機才有東西可以連。"
+            return L10n.t("先把上面的 Bridge 弄好,手機才有東西可以連。")
         case .checkingAgents:
-            return "正在確認你的 AI 引擎有沒有登入,幾秒就好。"
+            return L10n.t("正在確認你的 AI 引擎有沒有登入,幾秒就好。")
         case .noUsableAgent:
-            return "還差一個登入好的 AI 引擎。現在掃上去,手機那頭會是空的 —— 先把上面 Claude Code 或 Codex 其中一個登入完成。"
+            return L10n.t("還差一個登入好的 AI 引擎。現在掃上去,手機那頭會是空的 —— 先把上面 Claude Code 或 Codex 其中一個登入完成。")
         }
     }
 }
@@ -318,13 +318,13 @@ public enum SetupWizardPlanner {
 
     private static func pythonRow(_ probe: BridgeEnvironmentProbe) -> SetupWizardRow {
         if probe.pythonPath != nil {
-            return SetupWizardRow(step: .python, status: .ok, detail: "有了,版本夠新。")
+            return SetupWizardRow(step: .python, status: .ok, detail: L10n.t("有了,版本夠新。"))
         }
         // 這條 app 代勞不了(不能替使用者裝 Homebrew/Python)→ 給「說明」,
         // 重測交給清單底下那顆唯一的「重新檢查」,不要同一頁三顆一樣的鈕。
         return SetupWizardRow(
             step: .python, status: .blocked,
-            detail: "這台 Mac 還沒有夠新的 Python(系統內建的那版太舊)。按「說明」照著裝一次,裝好按下面的「重新檢查」。",
+            detail: L10n.t("這台 Mac 還沒有夠新的 Python(系統內建的那版太舊)。按「說明」照著裝一次,裝好按下面的「重新檢查」。"),
             helpURL: "https://www.python.org/downloads/macos/")
     }
 
@@ -333,41 +333,41 @@ public enum SetupWizardPlanner {
     private static func bridgeRow(_ state: BridgeEnvironmentState?,
                                   layout: BridgeInstallLayout) -> SetupWizardRow {
         guard let state else {
-            return SetupWizardRow(step: .bridge, status: .pending, detail: "檢查中…")
+            return SetupWizardRow(step: .bridge, status: .pending, detail: L10n.t("檢查中…"))
         }
         switch state {
         case .ready:
-            return SetupWizardRow(step: .bridge, status: .ok, detail: "正在跑,手機連得上。")
+            return SetupWizardRow(step: .bridge, status: .ok, detail: L10n.t("正在跑,手機連得上。"))
         case .readyButNoToken:
             return SetupWizardRow(
                 step: .bridge, status: .blocked,
-                detail: "服務活著,但少了配對用的金鑰。到「連線設定」把金鑰貼上就好。",
+                detail: L10n.t("服務活著,但少了配對用的金鑰。到「連線設定」把金鑰貼上就好。"),
                 action: .pasteToken)
         case .installedNotRunning:
             return SetupWizardRow(
                 step: .bridge, status: .blocked,
-                detail: "裝好了但沒在跑。按右邊幫你拉起來。",
+                detail: L10n.t("裝好了但沒在跑。按右邊幫你拉起來。"),
                 action: .startBridge)
         case .needsInstall:
             return SetupWizardRow(
                 step: .bridge, status: .blocked,
-                detail: "還沒裝。按右邊,Pocket 幫你裝好並啟動,你什麼都不用打。",
+                detail: L10n.t("還沒裝。按右邊,Pocket 幫你裝好並啟動,你什麼都不用打。"),
                 action: .installBridge)
         case .portBusy:
             return SetupWizardRow(
                 step: .bridge, status: .blocked,
-                detail: "這台機器上有別的程式占著 Pocket 要用的位置。Pocket 不會去動它 —— 先把那個程式關掉,再按「重新檢查」。",
+                detail: L10n.t("這台機器上有別的程式占著 Pocket 要用的位置。Pocket 不會去動它 —— 先把那個程式關掉,再按「重新檢查」。"),
                 action: .recheck,
                 helpURL: "https://github.com/cashtsai/pocket-connect/blob/main/docs/INSTALL_FAQ.md")
         case .missingPython:
             return SetupWizardRow(
                 step: .bridge, status: .blocked,
-                detail: "等上面的 Python 裝好,Pocket 才能把 Bridge 裝起來。",
+                detail: L10n.t("等上面的 Python 裝好,Pocket 才能把 Bridge 裝起來。"),
                 helpURL: "https://www.python.org/downloads/macos/")
         case .missingBridgeSource:
             return SetupWizardRow(
                 step: .bridge, status: .blocked,
-                detail: "這個版本的 Pocket 找不到要安裝的內容。重新下載一次最新版再試。",
+                detail: L10n.t("這個版本的 Pocket 找不到要安裝的內容。重新下載一次最新版再試。"),
                 action: .recheck,
                 helpURL: "https://github.com/cashtsai/pocket-connect/releases/latest")
         }
@@ -377,22 +377,22 @@ public enum SetupWizardPlanner {
 
     private static func reachRow(_ reach: ReachabilityReport) -> SetupWizardRow {
         guard reach.checked else {
-            return SetupWizardRow(step: .reach, status: .pending, detail: "檢查中…")
+            return SetupWizardRow(step: .reach, status: .pending, detail: L10n.t("檢查中…"))
         }
         if let remote = reach.remoteChannel {
             return SetupWizardRow(
                 step: .reach, status: .ok,
-                detail: "走「\(remote.displayName)」\(pretty(remote.address)) —— 出門在外也連得到。")
+                detail: L10n.t("走「\(remote.displayName)」\(pretty(remote.address)) —— 出門在外也連得到。"))
         }
         if let lan = reach.channels.first {
             return SetupWizardRow(
                 step: .reach, status: .warning,
-                detail: "只能在同一個網路用(現在的位址 \(pretty(lan.address)))。出門想連就裝 Tailscale,按右邊看怎麼做。",
+                detail: L10n.t("只能在同一個網路用(現在的位址 \(pretty(lan.address)))。出門想連就裝 Tailscale,按右邊看怎麼做。"),
                 helpURL: "https://tailscale.com/download/mac")
         }
         return SetupWizardRow(
             step: .reach, status: .warning,
-            detail: "找不到可以讓手機連進來的網路位址。確認這台 Mac 有連上 Wi-Fi,再按「重新檢查」。",
+            detail: L10n.t("找不到可以讓手機連進來的網路位址。確認這台 Mac 有連上 Wi-Fi,再按「重新檢查」。"),
             action: .recheck)
     }
 
@@ -407,19 +407,25 @@ public enum SetupWizardPlanner {
 
     /// CLI 回的帳號字串是給工程師看的英文(`Logged in using ChatGPT`…)。
     /// 使用者只該看到「他認得出那是誰」的那部分,其餘英文技術訊息一律不顯示。
+    /// 「 · 帳號」或空字串。抽成函式是為了讓上面那句的插值裡不要有巢狀字串
+    /// (見 `agentRow` 的註解)。
+    static func accountSuffix(_ raw: String?) -> String {
+        prettyAccount(raw).map { " · \($0)" } ?? ""
+    }
+
     static func prettyAccount(_ raw: String?) -> String? {
         guard let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
         else { return nil }
         let lower = text.lowercased()
-        if lower.contains("api key") { return "API 金鑰" }
+        if lower.contains("api key") { return L10n.t("API 金鑰") }
         if text.contains("@") { return text }           // email(+ 方案)—— 認得出是誰
-        if lower.contains("chatgpt") { return "ChatGPT 帳號" }
+        if lower.contains("chatgpt") { return L10n.t("ChatGPT 帳號") }
         return nil                                       // 看不懂的就不要給他看
     }
 
     private static func pendingAgentRow(_ cli: AgentCLI) -> SetupWizardRow {
         SetupWizardRow(step: cli == .claude ? .claude : .codex, status: .pending,
-                       detail: "等 Bridge 起來才查得到。")
+                       detail: L10n.t("等 Bridge 起來才查得到。"))
     }
 
     private static func agentRow(_ cli: AgentCLI, _ agent: AgentAuthSnapshot.Agent,
@@ -427,26 +433,30 @@ public enum SetupWizardPlanner {
         let step: SetupWizardStep = (cli == .claude) ? .claude : .codex
         if agent.isUsable {
             return SetupWizardRow(step: step, status: .ok,
-                                  detail: "已登入\(prettyAccount(agent.account).map { " · \($0)" } ?? "") —— 手機上可以直接用。")
+                                  // 帳號有值就補「 · 帳號」。**先算出來再插值** ——
+                                  // 插值裡放巢狀字串會讓 .strings 的 key 抽不出來
+                                  // (抽取器在第一個內層引號就斷掉),而且查表落空
+                                  // 時會靜默回退成中文,沒人會發現。
+                                  detail: L10n.t("已登入\(accountSuffix(agent.account)) —— 手機上可以直接用。"))
         }
         if agent.isChecking {
-            return SetupWizardRow(step: step, status: .pending, detail: "確認登入狀態中…")
+            return SetupWizardRow(step: step, status: .pending, detail: L10n.t("確認登入狀態中…"))
         }
         let status: BridgeChecklistItem.Status = blocking ? .blocked : .warning
         if !agent.installed {
             return SetupWizardRow(
                 step: step, status: status,
                 detail: blocking
-                    ? "還沒裝。按右邊讓 Pocket 幫你裝,裝完再登入就能用。"
-                    : "還沒裝 —— 不裝也沒關係,你已經有另一個引擎可以用了。",
+                    ? L10n.t("還沒裝。按右邊讓 Pocket 幫你裝,裝完再登入就能用。")
+                    : L10n.t("還沒裝 —— 不裝也沒關係,你已經有另一個引擎可以用了。"),
                 action: .installAgent(cli),
                 helpURL: cli.websiteURL)
         }
         return SetupWizardRow(
             step: step, status: status,
             detail: blocking
-                ? "裝好了,但還沒登入 —— 手機上會是鎖著的。按右邊登入,授權頁會自己開。"
-                : "裝好了但沒登入,想多一個引擎可用就按右邊登入。",
+                ? L10n.t("裝好了,但還沒登入 —— 手機上會是鎖著的。按右邊登入,授權頁會自己開。")
+                : L10n.t("裝好了但沒登入,想多一個引擎可用就按右邊登入。"),
             action: .loginAgent(cli),
             helpURL: cli.websiteURL)
     }
@@ -457,7 +467,7 @@ public enum SetupWizardPlanner {
         switch gate {
         case .ready:
             return SetupWizardRow(step: .qr, status: .ok,
-                                  detail: "一切就緒。按右邊,拿手機掃一下就完成。",
+                                  detail: L10n.t("一切就緒。按右邊,拿手機掃一下就完成。"),
                                   action: .openQR)
         case .waitingBridge, .checkingAgents:
             return SetupWizardRow(step: .qr, status: .pending, detail: gate.message)

@@ -24,6 +24,14 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 #   (bridge runtime would be bundled here too — see README "Bundling deps")
 # App icon (denim cowboy-pocket brand icon, pocket_macos_* full-size set from
 # the sun repo, built with iconutil) → bundled into Resources so Finder/Dock show it.
+# 本地化資源(2026-10-18)。桌面端在這之前**只有繁中**,而它是必經步驟 ——
+# 英語使用者下載英文 iOS App、被告知要裝桌面端,裝完打開全部是中文。
+# key = 繁中原字串(與 iOS 的 L10n 一致),所以漏譯時自動回退成中文,
+# 不會變成畫面上一串識別碼。產生方式:packaging/l10n_extract.py --sync
+for LPROJ in packaging/Resources/*.lproj; do
+  [ -d "$LPROJ" ] || continue
+  cp -R "$LPROJ" "$APPDIR/Contents/Resources/"
+done
 cp packaging/AppIcon.icns "$APPDIR/Contents/Resources/"
 # Menu bar glyph: monochrome pocket-outline template mark (menubar_36 from the
 # same brand set), not a system-font placeholder. isTemplate=true in code
