@@ -212,6 +212,20 @@ final class DashboardViewModel: ObservableObject {
         // 免費模式（自動臨時 tunnel）網址會變，靠 CloudKit 同步給手機 → 必須開 iCloud。
         // 有自訂固定網址（進階）就不需要（網址不變）。
         if appDelegate.customConnectURL == nil {
+            // 沒有自訂固定網址 → QR 的位址就是臨時 tunnel。tunnel 還沒起來時
+            // `effectiveConnectURL` 會退到共用後備網域(維護者的主機),發出去的
+            // QR 會把使用者的手機指向別人的機器 —— 所以**先等 tunnel**,
+            // 不管 iCloud 那關過不過。
+            //
+            // 舊版只有 CloudGate 被關掉的那條分支會等;entitled 那條直接
+            // `mintPairingCode()`,於是「有 iCloud、但 cloudflared 慢了一步」
+            // 就會發出一個錯的 QR。(2026-10-18 一星風險排查)
+            if appDelegate.autoTunnelURL == nil,
+               appDelegate.tunnelManager.currentURL == nil {
+                waitForTunnelThenMint(
+                    cloudGateReason: CloudGate.staticDisableReason() ?? "")
+                return
+            }
             if let reason = CloudGate.staticDisableReason() {
                 if appDelegate.autoTunnelURL != nil {
                     // A signed CloudKit build can keep the phone updated after

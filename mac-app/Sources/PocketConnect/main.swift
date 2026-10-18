@@ -13,6 +13,12 @@ struct Config {
     // Public connect URL the phone points at (the Cloudflare tunnel hostname).
     // Also the base for all bridge app-API calls (auth/apple, pair/new).
     var connectURL = "https://pocket.tsai.cash"
+    /// 上面那個預設值的 host。
+    ///
+    /// 它是**所有安裝共用的後備網域**(維護者的主機),只該用在「還沒有自己的
+    /// 網址」的過渡期 —— 絕不可以出現在配對 QR 裡。
+    /// 見 `PairingCodeController.refresh()` 的守門。
+    static let sharedFallbackHost = "pocket.tsai.cash"
     // Fixed Apple web-auth broker. Unlike connectURL/tunnel discovery, Apple's
     // registered return URL cannot change per user or per launch.
     var webAuthURL = "https://pocket.tsai.cash"
@@ -377,6 +383,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     }
 
     /// 隱藏選單列圖示（服務照跑）。先跳提醒說明怎麼叫回來，按「確認」才真的隱藏。
+    /// 使用者在 Finder / Launchpad 再點一次已經在跑的 App。
+    ///
+    /// 2026-10-18 一星風險排查:「隱藏選單列圖示」的確認框告訴使用者
+    /// 「之後要再顯示圖示,從『應用程式』或 Launchpad 重新開啟 Pocket 就會
+    /// 回來」—— 但 App 是 `LSUIElement`(無 Dock 圖示)、而且已經在跑,重新
+    /// 開啟只會**啟用既有實例**,沒有任何程式碼把 status item 放回來。
+    ///
+    /// 結果:使用者照著我們自己寫的指示做,圖示不會回來;App 在背景跑著但他
+    /// 沒有任何 UI 可以操作,只能去活動監視器殺掉它。那是一道單向門。
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        if !statusItem.isVisible { statusItem.isVisible = true }
+        return true
+    }
+
     @objc func hideStatusBar() {
         let alert = NSAlert()
         alert.alertStyle = .informational

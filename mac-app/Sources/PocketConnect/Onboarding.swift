@@ -108,6 +108,21 @@ final class PairingCoordinator {
         guard let bridgeToken = BridgeToken.read() else {
             return emit(.error("找不到 BRIDGE_TOKEN(檢查 LaunchAgent plist 或環境變數)"))
         }
+        // ⚠️ **絕不發出指向共用後備網域的 QR**(2026-10-18 一星風險排查)。
+        //
+        // `effectiveConnectURL` 是 `customConnectURL ?? autoTunnelURL ?? cfg.connectURL`,
+        // 而最後那個是寫死的 `pocket.tsai.cash` —— 維護者自己的網域。所以只要
+        // cloudflared 沒裝、還沒跟上、或剛掛掉,QR 就會把**使用者的手機指向
+        // 別人的機器**,而且照樣倒數「剩 5:00」。
+        //
+        // 後果:配對碼是對他自己的 bridge 發的,位址卻是別人的 → 手機拿自己的
+        // token 去敲別人的 bridge → 401 → 從此連不上,畫面上沒有任何訊息。
+        // 他的配對 token 也真的送到那台主機了。
+        //
+        // 這裡寧可不發 QR 也不發一個錯的:錯的 QR 會讓他以為配對成功。
+        guard lastPayloadHost != Config.sharedFallbackHost else {
+            return emit(.error("對外通道還沒就緒,先不產生配對碼 —— 現在發出去的 QR 會指向錯的位址。\n請稍候幾秒再按一次;若一直這樣,到「連線設定」填你自己的固定網址。"))
+        }
         emit(.loading)
         client.pairNew(bridgeToken: bridgeToken, sessionToken: session) { [weak self] result in
             guard let self else { return }
