@@ -68,8 +68,8 @@ final class BridgeEnvironmentModel: ObservableObject {
     /// 目前狀態對應的主要按鈕文案;nil = 沒有可自動執行的動作。
     var primaryActionTitle: String? {
         switch state {
-        case .needsInstall: return "一鍵安裝並啟動"
-        case .installedNotRunning: return "啟動 Bridge"
+        case .needsInstall: return L10n.t("一鍵安裝並啟動")
+        case .installedNotRunning: return L10n.t("啟動 Bridge")
         case .none, .some(.ready), .some(.readyButNoToken),
              .some(.portBusy), .some(.missingPython), .some(.missingBridgeSource):
             return nil
@@ -91,7 +91,7 @@ final class BridgeEnvironmentModel: ObservableObject {
     private func start(_ work: (@escaping (BridgeBootstrap.Progress) -> Void) -> Void) {
         isBusy = true
         lastError = nil
-        busyMessage = "準備中…"
+        busyMessage = L10n.t("準備中…")
         work { [weak self] progress in
             guard let self else { return }
             switch progress {
@@ -118,14 +118,14 @@ final class BridgeEnvironmentModel: ObservableObject {
     /// 標題列的一句話總結。
     var headline: String {
         switch state {
-        case .none: return "檢查執行環境…"
-        case .some(.ready): return "執行環境已就緒"
-        case .some(.readyButNoToken): return "Bridge 活著,但讀不到金鑰"
-        case .some(.installedNotRunning): return "Bridge 已安裝,但沒在跑"
-        case .some(.needsInstall): return "還差一步:把 Bridge 裝起來"
-        case .some(.portBusy): return "埠被其他程式占用了"
-        case .some(.missingPython): return "需要 Python 3.10 以上"
-        case .some(.missingBridgeSource): return "找不到 Bridge 程式"
+        case .none: return L10n.t("檢查執行環境…")
+        case .some(.ready): return L10n.t("執行環境已就緒")
+        case .some(.readyButNoToken): return L10n.t("Bridge 活著,但讀不到金鑰")
+        case .some(.installedNotRunning): return L10n.t("Bridge 已安裝,但沒在跑")
+        case .some(.needsInstall): return L10n.t("還差一步:把 Bridge 裝起來")
+        case .some(.portBusy): return L10n.t("埠被其他程式占用了")
+        case .some(.missingPython): return L10n.t("需要 Python 3.10 以上")
+        case .some(.missingBridgeSource): return L10n.t("找不到 Bridge 程式")
         }
     }
 }
@@ -141,7 +141,7 @@ struct EnvironmentSetupView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             if isOnboarding {
-                Text("Pocket 需要在這台 Mac 上跑一個小型服務(Bridge),手機才連得上。\n下面是這台機器的檢查結果。")
+                Text(L10n.t("Pocket 需要在這台 Mac 上跑一個小型服務(Bridge),手機才連得上。\n下面是這台機器的檢查結果。"))
                     .font(.caption).foregroundStyle(.secondary)
             }
             ForEach(model.checklist) { item in
@@ -157,7 +157,7 @@ struct EnvironmentSetupView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("執行環境").font(.headline).foregroundStyle(Brand.ink)
+            Text(L10n.t("執行環境")).font(.headline).foregroundStyle(Brand.ink)
             Text(model.headline).font(.caption).foregroundStyle(.secondary)
             Spacer()
             if model.isBusy { ProgressView().controlSize(.small) }
@@ -211,11 +211,11 @@ struct EnvironmentSetupView: View {
             }
             HStack(spacing: 10) {
                 if let command = item.fixItCommand {
-                    Button("複製指令") { model.copy(command) }
+                    Button(L10n.t("複製指令")) { model.copy(command) }
                         .buttonStyle(.bordered).controlSize(.small)
                 }
                 if let raw = item.fixItURL, let url = URL(string: raw) {
-                    Link("說明", destination: url).font(.caption)
+                    Link(L10n.t("說明"), destination: url).font(.caption)
                 }
                 Spacer()
             }
@@ -237,9 +237,9 @@ struct EnvironmentSetupView: View {
                     .buttonStyle(.borderedProminent).tint(Brand.red)
                     .controlSize(.small).disabled(model.isBusy)
             }
-            Button("重新檢查") { model.refresh() }
+            Button(L10n.t("重新檢查")) { model.refresh() }
                 .buttonStyle(.bordered).controlSize(.small).disabled(model.isBusy)
-            Button("查看記錄檔") { model.revealLog() }
+            Button(L10n.t("查看記錄檔")) { model.revealLog() }
                 .buttonStyle(.borderless).controlSize(.small).font(.caption)
             Spacer()
         }

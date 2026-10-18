@@ -79,7 +79,7 @@ public final class CloudSyncController {
             DispatchQueue.main.async {
                 guard let self else { return }
                 guard accountStatus == .available else {
-                    let why = error.map { "\($0.localizedDescription)" } ?? "iCloud 帳號不可用(\(accountStatus.rawValue))"
+                    let why = error.map { "\($0.localizedDescription)" } ?? L10n.t("iCloud 帳號不可用(\(accountStatus.rawValue))")
                     self.setStatus(.disabled(why))
                     return
                 }
@@ -117,7 +117,7 @@ public final class CloudSyncController {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if case .failure(let error) = result {
-                    self.setStatus(.error("建立 PocketZone 失敗:\(error.localizedDescription)"))
+                    self.setStatus(.error(L10n.t("建立 PocketZone 失敗:\(error.localizedDescription)")))
                     return
                 }
                 self.activate(db, hostDeviceID: info.deviceID)

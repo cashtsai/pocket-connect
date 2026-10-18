@@ -156,9 +156,9 @@ public enum BridgeSource: Equatable {
 
     public var displayName: String {
         switch self {
-        case .installed: return "已安裝的 bridge"
-        case .bundled: return "Pocket.app 內附的 bridge"
-        case .localCheckout: return "本機 bridge 原始碼"
+        case .installed: return L10n.t("已安裝的 bridge")
+        case .bundled: return L10n.t("Pocket.app 內附的 bridge")
+        case .localCheckout: return L10n.t("本機 bridge 原始碼")
         }
     }
 }
@@ -204,10 +204,10 @@ public enum BridgeTokenSource: String, Equatable {
 
     public var displayName: String {
         switch self {
-        case .manualOverride: return "手動貼上"
-        case .environment: return "環境變數"
-        case .pocketLaunchAgent: return "Pocket 安裝的 bridge"
-        case .hermesLaunchAgent: return "既有的 Hermes bridge"
+        case .manualOverride: return L10n.t("手動貼上")
+        case .environment: return L10n.t("環境變數")
+        case .pocketLaunchAgent: return L10n.t("Pocket 安裝的 bridge")
+        case .hermesLaunchAgent: return L10n.t("既有的 Hermes bridge")
         }
     }
 }
@@ -356,7 +356,7 @@ public enum BridgeChecklist {
             // 文案走完還是死路。正確路徑是 Homebrew 或 python.org 的新版。
             items.append(.init(
                 id: "python", title: "Python 3.10+",
-                detail: "找不到 Python 3.10 以上版本(系統內建的 3.9 跑不動 bridge)。用 Homebrew 裝一行搞定,或去 python.org 下載安裝器。",
+                detail: L10n.t("找不到 Python 3.10 以上版本(系統內建的 3.9 跑不動 bridge)。用 Homebrew 裝一行搞定,或去 python.org 下載安裝器。"),
                 status: .blocked,
                 fixItURL: "https://www.python.org/downloads/macos/",
                 fixItCommand: "brew install python"))
@@ -364,12 +364,12 @@ public enum BridgeChecklist {
 
         // ── bridge 程式來源 ──────────────────────────────────────────────────
         if let source = probe.bridgeSource {
-            items.append(.init(id: "source", title: "Bridge 程式",
+            items.append(.init(id: "source", title: L10n.t("Bridge 程式"),
                                detail: "\(source.displayName) · \(source.path)", status: .ok))
         } else {
             items.append(.init(
-                id: "source", title: "Bridge 程式",
-                detail: "這個版本的 Pocket 沒有內附 bridge,本機也找不到 bridge 原始碼。請照說明取得後再重新檢查。",
+                id: "source", title: L10n.t("Bridge 程式"),
+                detail: L10n.t("這個版本的 Pocket 沒有內附 bridge,本機也找不到 bridge 原始碼。請照說明取得後再重新檢查。"),
                 status: .blocked,
                 fixItURL: "https://github.com/cashtsai/pocket-connect/blob/main/docs/INSTALL_FAQ.md"))
         }
@@ -386,47 +386,47 @@ public enum BridgeChecklist {
             }
         }()
         items.append(.init(
-            id: "launchagent", title: "背景服務(LaunchAgent)",
+            id: "launchagent", title: L10n.t("背景服務(LaunchAgent)"),
             detail: probe.launchAgentInstalled
                 ? layout.launchAgentPath
                 : (externallyManaged
-                    ? "使用既有的 bridge(外部管理)—— 不需要 Pocket 的 LaunchAgent。"
-                    : "尚未建立 —— 按「一鍵安裝」會自動寫入並啟動。"),
+                    ? L10n.t("使用既有的 bridge(外部管理)—— 不需要 Pocket 的 LaunchAgent。")
+                    : L10n.t("尚未建立 —— 按「一鍵安裝」會自動寫入並啟動。")),
             status: (probe.launchAgentInstalled || externallyManaged) ? .ok : .warning))
 
         // ── 服務健康 ────────────────────────────────────────────────────────
         switch state {
         case .ready, .readyButNoToken:
-            items.append(.init(id: "health", title: "Bridge 服務",
-                               detail: "已在 \(layout.healthURL) 回應", status: .ok))
+            items.append(.init(id: "health", title: L10n.t("Bridge 服務"),
+                               detail: L10n.t("已在 \(layout.healthURL) 回應"), status: .ok))
         case .portBusy(let occupant):
             items.append(.init(
-                id: "health", title: "Bridge 服務",
-                detail: "埠 \(layout.port) 已被其他程式占用(\(occupant.command),PID \(occupant.pid)),而且它不是 Pocket 裝的。Pocket 不會覆蓋它 —— 請先停掉那個程式,或改用其他埠。",
+                id: "health", title: L10n.t("Bridge 服務"),
+                detail: L10n.t("埠 \(layout.port) 已被其他程式占用(\(occupant.command),PID \(occupant.pid)),而且它不是 Pocket 裝的。Pocket 不會覆蓋它 —— 請先停掉那個程式,或改用其他埠。"),
                 status: .blocked,
                 fixItCommand: "lsof -nP -iTCP:\(layout.port) -sTCP:LISTEN"))
         case .installedNotRunning:
             items.append(.init(
-                id: "health", title: "Bridge 服務",
-                detail: "已安裝但沒在跑 —— 按「啟動」會重新拉起來。", status: .warning,
+                id: "health", title: L10n.t("Bridge 服務"),
+                detail: L10n.t("已安裝但沒在跑 —— 按「啟動」會重新拉起來。"), status: .warning,
                 fixItCommand: "launchctl kickstart -k gui/$(id -u)/\(layout.label)"))
         case .needsInstall, .missingPython, .missingBridgeSource:
-            items.append(.init(id: "health", title: "Bridge 服務",
-                               detail: "尚未安裝", status: .warning))
+            items.append(.init(id: "health", title: L10n.t("Bridge 服務"),
+                               detail: L10n.t("尚未安裝"), status: .warning))
         }
 
         // ── 金鑰 ────────────────────────────────────────────────────────────
         if let source = probe.tokenSource {
             items.append(.init(id: "token", title: "BRIDGE_TOKEN",
-                               detail: "已讀到(來源:\(source.displayName))", status: .ok))
+                               detail: L10n.t("已讀到(來源:\(source.displayName))"), status: .ok))
         } else {
             // bridge 已經活著卻沒有金鑰 = 配對一定失敗(pair/new 需要 bearer),
             // 所以是 blocked 不是 warning。還沒裝好時金鑰本來就還沒產生,那才是 warning。
             items.append(.init(
                 id: "token", title: "BRIDGE_TOKEN",
                 detail: probe.health.isOK
-                    ? "服務活著但讀不到金鑰,配對會失敗。請到「連線設定」把 BRIDGE_TOKEN 貼上。"
-                    : "讀不到金鑰。安裝完會自動產生;若你用自己的 bridge,請到「連線設定」手動貼上。",
+                    ? L10n.t("服務活著但讀不到金鑰,配對會失敗。請到「連線設定」把 BRIDGE_TOKEN 貼上。")
+                    : L10n.t("讀不到金鑰。安裝完會自動產生;若你用自己的 bridge,請到「連線設定」手動貼上。"),
                 status: probe.health.isOK ? .blocked : .warning))
         }
 
@@ -435,16 +435,16 @@ public enum BridgeChecklist {
             switch agentState {
             case .connected(let account):
                 items.append(.init(id: "agent-\(cli.rawValue)", title: cli.displayName,
-                                   detail: account ?? "已連接", status: .ok))
+                                   detail: account ?? L10n.t("已連接"), status: .ok))
             case .notLoggedIn:
                 items.append(.init(
                     id: "agent-\(cli.rawValue)", title: cli.displayName,
-                    detail: "已安裝但尚未登入 —— 到控制台「AI 引擎」按「連接」完成授權。",
+                    detail: L10n.t("已安裝但尚未登入 —— 到控制台「AI 引擎」按「連接」完成授權。"),
                     status: .warning, fixItURL: cli.websiteURL))
             case .notInstalled:
                 items.append(.init(
                     id: "agent-\(cli.rawValue)", title: cli.displayName,
-                    detail: "尚未安裝。Pocket 不會替你安裝 AI CLI —— 請自行用下面這行指令裝好。",
+                    detail: L10n.t("尚未安裝。Pocket 不會替你安裝 AI CLI —— 請自行用下面這行指令裝好。"),
                     status: .warning,
                     fixItURL: cli.websiteURL, fixItCommand: cli.installCommand))
             }

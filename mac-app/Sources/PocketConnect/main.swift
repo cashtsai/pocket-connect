@@ -216,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
             // v005 狀態列雙態:連線/離線各自的 template 圖(系統自動配
             // light/dark);tooltip 保留文字說明。
             self.statusItem.button?.image = Self.menuBarIcon(connected: ok)
-            self.statusItem.button?.toolTip = ok ? "Pocket — ● 已連線" : "Pocket — ○ 離線"
+            self.statusItem.button?.toolTip = ok ? L10n.t("Pocket — ● 已連線") : L10n.t("Pocket — ○ 離線")
             self.rebuildMenu()
         }
     }
@@ -264,11 +264,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     func rebuildMenu() {
         let m = NSMenu()
         // 第一行：燈號 + 連線狀態（反白不可點）。
-        let status = NSMenuItem(title: reachable ? "● 已連線" : "○ 未連線", action: nil, keyEquivalent: "")
+        let status = NSMenuItem(title: reachable ? L10n.t("● 已連線") : L10n.t("○ 未連線"), action: nil, keyEquivalent: "")
         status.isEnabled = false
         m.addItem(status)
         // 第二行：登入狀態（反白不可點）。
-        let loginLine = NSMenuItem(title: isSignedIn ? "● 已登入" : "○ 尚未登入", action: nil, keyEquivalent: "")
+        let loginLine = NSMenuItem(title: isSignedIn ? L10n.t("● 已登入") : L10n.t("○ 尚未登入"), action: nil, keyEquivalent: "")
         loginLine.isEnabled = false
         m.addItem(loginLine)
         // M3 — 環境沒就緒時，選單就直接說出原因並給入口，別讓使用者自己猜。
@@ -280,20 +280,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         m.addItem(.separator())
         // 未登入 → 只能「登入」；登入後才有「控制台」+「帳號連結」。
         if isSignedIn {
-            m.addItem(NSMenuItem(title: "控制台", action: #selector(showDashboard), keyEquivalent: "d"))
-            m.addItem(NSMenuItem(title: "帳號連結…", action: #selector(showAccountLinking), keyEquivalent: "l"))
+            m.addItem(NSMenuItem(title: L10n.t("控制台"), action: #selector(showDashboard), keyEquivalent: "d"))
+            m.addItem(NSMenuItem(title: L10n.t("帳號連結…"), action: #selector(showAccountLinking), keyEquivalent: "l"))
         } else {
-            m.addItem(NSMenuItem(title: "登入…", action: #selector(showLogin), keyEquivalent: "d"))
+            m.addItem(NSMenuItem(title: L10n.t("登入…"), action: #selector(showLogin), keyEquivalent: "d"))
         }
         // 啟動路徑的另一半：手機那頭要先有 App。QR 直接掃到 App Store。
-        m.addItem(NSMenuItem(title: "下載手機 App…", action: #selector(showDownloadQR), keyEquivalent: ""))
+        m.addItem(NSMenuItem(title: L10n.t("下載手機 App…"), action: #selector(showDownloadQR), keyEquivalent: ""))
         m.addItem(.separator())
         // 自動更新:手動入口。背景每 24h 也會查一次(applicationDidFinishLaunching)。
-        let ver = Updater.currentVersion.map { "(\($0))" } ?? ""
-        m.addItem(NSMenuItem(title: "檢查更新…\(ver.isEmpty ? "" : " \(ver)")",
+        // **先算出來再插值** —— 插值裡放巢狀字串,`.strings` 的 key 會在第一個
+        // 內層引號就斷掉(見 packaging/l10n_wrap.py 的檔頭)。
+        let verSuffix = Updater.currentVersion.map { " (\($0))" } ?? ""
+        m.addItem(NSMenuItem(title: L10n.t("檢查更新…\(verSuffix)"),
                              action: #selector(checkForUpdates), keyEquivalent: ""))
-        m.addItem(NSMenuItem(title: "狀態列隱藏", action: #selector(hideStatusBar), keyEquivalent: ""))
-        m.addItem(NSMenuItem(title: "結束", action: #selector(quit), keyEquivalent: ""))
+        m.addItem(NSMenuItem(title: L10n.t("狀態列隱藏"), action: #selector(hideStatusBar), keyEquivalent: ""))
+        m.addItem(NSMenuItem(title: L10n.t("結束"), action: #selector(quit), keyEquivalent: ""))
         m.items.forEach { $0.target = self }
         statusItem.menu = m
     }
@@ -317,13 +319,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     /// 選單那一行的一句話。
     static func environmentSummary(_ state: BridgeEnvironmentState) -> String {
         switch state {
-        case .ready: return "執行環境已就緒"
-        case .readyButNoToken: return "缺 BRIDGE_TOKEN"
-        case .installedNotRunning: return "Bridge 沒在跑"
-        case .needsInstall: return "Bridge 尚未安裝"
-        case .portBusy: return "Bridge 埠被占用"
-        case .missingPython: return "缺 Python 3.10+"
-        case .missingBridgeSource: return "找不到 Bridge 程式"
+        case .ready: return L10n.t("執行環境已就緒")
+        case .readyButNoToken: return L10n.t("缺 BRIDGE_TOKEN")
+        case .installedNotRunning: return L10n.t("Bridge 沒在跑")
+        case .needsInstall: return L10n.t("Bridge 尚未安裝")
+        case .portBusy: return L10n.t("Bridge 埠被占用")
+        case .missingPython: return L10n.t("缺 Python 3.10+")
+        case .missingBridgeSource: return L10n.t("找不到 Bridge 程式")
         }
     }
 
@@ -370,16 +372,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         if let urlErr = e as? URLError {
             switch urlErr.code {
             case .timedOut:
-                return "連線逾時,請確認網路後再按一次登入。"
+                return L10n.t("連線逾時,請確認網路後再按一次登入。")
             case .notConnectedToInternet, .networkConnectionLost:
-                return "網路中斷了,確認網路後再試一次。"
+                return L10n.t("網路中斷了,確認網路後再試一次。")
             case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
-                return "暫時連不到伺服器,請稍後再試。"
+                return L10n.t("暫時連不到伺服器,請稍後再試。")
             default:
-                return "登入連線出錯（\(urlErr.code.rawValue)）,請再試一次。"
+                return L10n.t("登入連線出錯（\(urlErr.code.rawValue)）,請再試一次。")
             }
         }
-        return "登入失敗:\(e.localizedDescription)"
+        return L10n.t("登入失敗:\(e.localizedDescription)")
     }
 
     /// 隱藏選單列圖示（服務照跑）。先跳提醒說明怎麼叫回來，按「確認」才真的隱藏。
@@ -401,10 +403,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     @objc func hideStatusBar() {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "要隱藏選單列圖示嗎？"
-        alert.informativeText = "Pocket 會繼續在背景執行（配對、連線都照常）。\n\n之後要再顯示圖示，從「應用程式」或 Launchpad 重新開啟 Pocket 就會回來。"
-        alert.addButton(withTitle: "確認隱藏")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L10n.t("要隱藏選單列圖示嗎？")
+        alert.informativeText = L10n.t("Pocket 會繼續在背景執行（配對、連線都照常）。\n\n之後要再顯示圖示，從「應用程式」或 Launchpad 重新開啟 Pocket 就會回來。")
+        alert.addButton(withTitle: L10n.t("確認隱藏"))
+        alert.addButton(withTitle: L10n.t("取消"))
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             statusItem.isVisible = false
@@ -428,12 +430,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
     private func makeDownloadQRWindow() -> NSWindow {
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 420),
                            styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        win.title = "下載 Pocket App"
+        win.title = L10n.t("下載 Pocket App")
         win.center()
         let content = NSView(frame: win.contentRect(forFrameRect: win.frame))
         let iv = NSImageView(frame: NSRect(x: 20, y: 80, width: 320, height: 320))
         iv.imageScaling = .scaleProportionallyUpOrDown
-        let label = NSTextField(labelWithString: "用手機相機掃描下載 Pocket App")
+        let label = NSTextField(labelWithString: L10n.t("用手機相機掃描下載 Pocket App"))
         label.frame = NSRect(x: 0, y: 36, width: 360, height: 20)
         label.alignment = .center; label.textColor = .secondaryLabelColor
         content.addSubview(iv); content.addSubview(label)
@@ -615,7 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, OnboardingDelegate {
         case .success(let session):
             let status = Keychain.saveSessionToken(session.sessionToken)
             guard status == errSecSuccess else {
-                return c.showSignInError("無法寫入 Keychain (OSStatus \(status))")
+                return c.showSignInError(L10n.t("無法寫入 Keychain (OSStatus \(status))"))
             }
             UserDefaults.standard.set(true, forKey: cfg.onboardedKey)
             rebuildMenu()

@@ -73,6 +73,8 @@ public enum CloudSchema {
 public struct TokenRedLineError: Error, CustomStringConvertible {
     public let offendingFields: [String]
     public var description: String {
+        // l10n:ignore —— 這是**開發者**看的紅線錯誤(CloudKit 寫入前的守門),
+        // 不會出現在使用者介面。翻了反而讓事故報告難對。
         "紅線:欄位含 token 字樣,拒絕寫入 CloudKit:\(offendingFields.joined(separator: ", "))"
     }
 }

@@ -139,7 +139,7 @@ final class BridgeBootstrap {
         let script = source.path + "/deploy/install-local-bridge.sh"
         guard fm.isExecutableFile(atPath: script) else {
             return progress(.finished(.failure(BootstrapError(
-                message: "找不到安裝腳本:\(script)"))))
+                message: L10n.t("找不到安裝腳本:\(script)")))))
         }
         isInstalling = true
         prepareLogDirectory()
@@ -155,7 +155,7 @@ final class BridgeBootstrap {
                 DispatchQueue.main.async { progress(.finished(result)) }
             }
 
-            emit("▸ 開始安裝 bridge(來源:\(source.displayName))")
+            emit(L10n.t("▸ 開始安裝 bridge(來源:\(source.displayName))"))
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -185,25 +185,25 @@ final class BridgeBootstrap {
                 try process.run()
             } catch {
                 pipe.fileHandleForReading.readabilityHandler = nil
-                emit("✗ 無法啟動安裝腳本:\(error.localizedDescription)")
+                emit(L10n.t("✗ 無法啟動安裝腳本:\(error.localizedDescription)"))
                 return finish(.failure(error))
             }
             process.waitUntilExit()
             pipe.fileHandleForReading.readabilityHandler = nil
 
             guard process.terminationStatus == 0 else {
-                emit("✗ 安裝腳本失敗(exit \(process.terminationStatus))")
+                emit(L10n.t("✗ 安裝腳本失敗(exit \(process.terminationStatus))"))
                 return finish(.failure(BootstrapError(
-                    message: "安裝失敗(exit \(process.terminationStatus))。記錄檔:\(self.layout.installLogPath)")))
+                    message: L10n.t("安裝失敗(exit \(process.terminationStatus))。記錄檔:\(self.layout.installLogPath)"))))
             }
 
-            emit("▸ 等待 bridge 回應 \(self.layout.healthURL)")
+            emit(L10n.t("▸ 等待 bridge 回應 \(self.layout.healthURL)"))
             guard self.waitForHealth() else {
-                emit("✗ 安裝完成但 bridge 沒有回應")
+                emit(L10n.t("✗ 安裝完成但 bridge 沒有回應"))
                 return finish(.failure(BootstrapError(
-                    message: "bridge 裝好了但沒回應。記錄檔:\(self.layout.installLogPath)")))
+                    message: L10n.t("bridge 裝好了但沒回應。記錄檔:\(self.layout.installLogPath)"))))
             }
-            emit("✓ bridge 已就緒")
+            emit(L10n.t("✓ bridge 已就緒"))
             finish(.success(()))
         }
     }
@@ -217,18 +217,18 @@ final class BridgeBootstrap {
                 DispatchQueue.main.async { progress(.message(text)) }
             }
             let uid = getuid()
-            emit("▸ 啟動 \(self.layout.label)")
+            emit(L10n.t("▸ 啟動 \(self.layout.label)"))
             // 先確保 plist 已 bootstrap(重開機後可能只是沒載入)。
             _ = Self.run("/bin/launchctl", ["bootstrap", "gui/\(uid)", self.layout.launchAgentPath])
             _ = Self.run("/bin/launchctl", ["kickstart", "-k", "gui/\(uid)/\(self.layout.label)"])
             guard self.waitForHealth() else {
-                emit("✗ 啟動後仍沒有回應")
+                emit(L10n.t("✗ 啟動後仍沒有回應"))
                 return DispatchQueue.main.async {
                     progress(.finished(.failure(BootstrapError(
-                        message: "啟動了但 bridge 沒回應。記錄檔:\(self.layout.installLogPath)"))))
+                        message: L10n.t("啟動了但 bridge 沒回應。記錄檔:\(self.layout.installLogPath)")))))
                 }
             }
-            emit("✓ bridge 已就緒")
+            emit(L10n.t("✓ bridge 已就緒"))
             DispatchQueue.main.async { progress(.finished(.success(()))) }
         }
     }
@@ -264,7 +264,7 @@ final class BridgeBootstrap {
     func revealLog() {
         prepareLogDirectory()
         if !fm.fileExists(atPath: layout.installLogPath) {
-            appendLog("(還沒有安裝記錄)")
+            appendLog(L10n.t("(還沒有安裝記錄)"))
         }
         NSWorkspace.shared.selectFile(layout.installLogPath,
                                       inFileViewerRootedAtPath: layout.logDirectory)

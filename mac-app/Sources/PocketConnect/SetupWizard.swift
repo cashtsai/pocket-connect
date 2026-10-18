@@ -120,11 +120,11 @@ final class SetupWizardModel: ObservableObject {
             switch result {
             case .success(let snapshot):
                 self.agents = snapshot
-                if self.note?.hasPrefix("問不到") == true { self.note = nil }
+                if self.note?.hasPrefix(L10n.t("問不到")) == true { self.note = nil }
             case .failure:
                 // 問不到就維持「檢查中」(擋住 QR 是安全的那一邊),並明說在重試。
                 self.agents = nil
-                self.note = "問不到 AI 引擎的登入狀態,正在重試…"
+                self.note = L10n.t("問不到 AI 引擎的登入狀態,正在重試…")
             }
             self.rebuild()
         }
@@ -188,7 +188,7 @@ final class SetupWizardModel: ObservableObject {
     /// 裝不起來(沒有 npm、沒網路…)不硬撐:收掉忙碌狀態,改成「照說明裝」。
     private func installAgent(_ cli: AgentCLI) {
         guard agentInstall == nil else { return }
-        busyMessage = "正在安裝 \(cli.displayName) —— 大約一兩分鐘,不用動手。"
+        busyMessage = L10n.t("正在安裝 \(cli.displayName) —— 大約一兩分鐘,不用動手。")
         environment.bootstrap.appendLog("[wizard] install \(cli.rawValue): \(cli.installCommand)")
 
         let process = Process()
@@ -215,7 +215,7 @@ final class SetupWizardModel: ObservableObject {
                 self.agentInstall = nil
                 self.busyMessage = nil
                 if status != 0 {
-                    self.note = "\(cli.displayName) 自動安裝沒成功。按那一列的「說明」照官網做一次,裝好回來按「重新檢查」。"
+                    self.note = L10n.t("\(cli.displayName) 自動安裝沒成功。按那一列的「說明」照官網做一次,裝好回來按「重新檢查」。")
                 }
                 self.refresh()
             }
@@ -226,7 +226,7 @@ final class SetupWizardModel: ObservableObject {
         } catch {
             agentInstall = nil
             busyMessage = nil
-            note = "\(cli.displayName) 自動安裝啟動不了。按那一列的「說明」照官網做一次。"
+            note = L10n.t("\(cli.displayName) 自動安裝啟動不了。按那一列的「說明」照官網做一次。")
             return
         }
         // 保險:5 分鐘沒裝完就收掉,不讓畫面永遠卡在「安裝中」。
@@ -239,13 +239,13 @@ final class SetupWizardModel: ObservableObject {
     /// 自己架 bridge 的使用者可能要手動貼金鑰。登入前沒有控制台可開,所以就地問。
     private func askForToken() {
         let alert = NSAlert()
-        alert.messageText = "貼上你的 Bridge 金鑰"
-        alert.informativeText = "你自己架的 Bridge 需要一組金鑰,Pocket 才能幫你產生配對 QR。\n沒有的話讓 Pocket 幫你裝一套就不用管這個。"
+        alert.messageText = L10n.t("貼上你的 Bridge 金鑰")
+        alert.informativeText = L10n.t("你自己架的 Bridge 需要一組金鑰,Pocket 才能幫你產生配對 QR。\n沒有的話讓 Pocket 幫你裝一套就不用管這個。")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        field.placeholderString = "金鑰"
+        field.placeholderString = L10n.t("金鑰")
         alert.accessoryView = field
-        alert.addButton(withTitle: "存起來")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L10n.t("存起來"))
+        alert.addButton(withTitle: L10n.t("取消"))
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -359,10 +359,10 @@ enum WizardShot {
 
     private static func statusWord(_ s: BridgeChecklistItem.Status) -> String {
         switch s {
-        case .ok: return "綠"
-        case .warning: return "黃"
-        case .blocked: return "紅"
-        case .pending: return "待"
+        case .ok: return L10n.t("綠")
+        case .warning: return L10n.t("黃")
+        case .blocked: return L10n.t("紅")
+        case .pending: return L10n.t("待")
         }
     }
 }
@@ -393,10 +393,10 @@ struct SetupWizardView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("設定這台 Mac").font(.title3.weight(.semibold)).foregroundStyle(Brand.ink)
+            Text(L10n.t("設定這台 Mac")).font(.title3.weight(.semibold)).foregroundStyle(Brand.ink)
             Text(model.plan.gate.allowsQR
-                 ? "都好了 —— 拿手機掃 QR 就能開始用。"
-                 : "照著下面走完,手機掃 QR 就能馬上用。")
+                 ? L10n.t("都好了 —— 拿手機掃 QR 就能開始用。")
+                 : L10n.t("照著下面走完,手機掃 QR 就能馬上用。"))
                 .font(.callout)
                 .foregroundStyle(model.plan.gate.allowsQR ? Brand.green : .secondary)
         }
@@ -450,7 +450,7 @@ struct SetupWizardView: View {
                     .disabled(isBusy)
             }
             if let help = row.helpURL, row.status != .ok {
-                Button("說明") { model.openHelp(help) }
+                Button(L10n.t("說明")) { model.openHelp(help) }
                     .buttonStyle(.bordered).controlSize(.small)
             }
         }
@@ -468,7 +468,7 @@ struct SetupWizardView: View {
             if model.plan.gate.allowsQR {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(Brand.green)
-                    Text("準備好了").font(.body.weight(.semibold)).foregroundStyle(Brand.green)
+                    Text(L10n.t("準備好了")).font(.body.weight(.semibold)).foregroundStyle(Brand.green)
                 }
             }
             if let busy = model.busyMessage ?? (environment.isBusy ? environment.busyMessage : nil) {
@@ -482,9 +482,9 @@ struct SetupWizardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
-                Button("重新檢查") { model.perform(.recheck) }
+                Button(L10n.t("重新檢查")) { model.perform(.recheck) }
                     .buttonStyle(.bordered).controlSize(.small).disabled(isBusy)
-                Button("查看記錄檔") { model.revealLog() }
+                Button(L10n.t("查看記錄檔")) { model.revealLog() }
                     .buttonStyle(.borderless).controlSize(.small).font(.caption)
                 Spacer()
             }

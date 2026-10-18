@@ -115,7 +115,7 @@ final class AgentConnectModel: ObservableObject {
                 loginProcesses[cli] = process
             } catch {
                 rows[idx].phase = .notLoggedIn
-                rows[idx].note = "無法啟動 codex:\(error.localizedDescription)"
+                rows[idx].note = L10n.t("無法啟動 codex:\(error.localizedDescription)")
                 return
             }
         case .claude:
@@ -124,7 +124,7 @@ final class AgentConnectModel: ObservableObject {
                 try Self.openTerminalLogin(binaryPath: path, arguments: cli.loginArguments)
             } catch {
                 rows[idx].phase = .notLoggedIn
-                rows[idx].note = "無法開啟終端機:\(error.localizedDescription)"
+                rows[idx].note = L10n.t("無法開啟終端機:\(error.localizedDescription)")
                 return
             }
         }
@@ -142,7 +142,7 @@ final class AgentConnectModel: ObservableObject {
               rows[idx].phase == .connecting else { return }
         stopPolling(cli)
         rows[idx].phase = .notLoggedIn
-        rows[idx].note = "登入沒有完成,請再按一次「連接」。"
+        rows[idx].note = L10n.t("登入沒有完成,請再按一次「連接」。")
     }
 
     // MARK: 輪詢(2.5 秒查一次 status,成功轉綠勾,5 分鐘逾時)
@@ -168,7 +168,7 @@ final class AgentConnectModel: ObservableObject {
         guard let idx = rows.firstIndex(where: { $0.cli == cli }),
               rows[idx].phase == .connecting else { return }
         rows[idx].phase = .notLoggedIn
-        rows[idx].note = "等不到授權完成(5 分鐘),請再按一次「連接」。"
+        rows[idx].note = L10n.t("等不到授權完成(5 分鐘),請再按一次「連接」。")
     }
 
     private func stopPolling(_ cli: AgentCLI) {
@@ -223,8 +223,8 @@ final class AgentConnectModel: ObservableObject {
         let script = """
         #!/bin/zsh
         clear
-        echo "Pocket — 連接授權"
-        echo "瀏覽器會開啟授權頁;完成後回到 Pocket 控制台看到綠勾,即可關閉此視窗。"
+        echo L10n.t("Pocket — 連接授權")
+        echo L10n.t("瀏覽器會開啟授權頁;完成後回到 Pocket 控制台看到綠勾,即可關閉此視窗。")
         echo
         exec '\(binaryPath)' \(arguments.joined(separator: " "))
         """
@@ -243,8 +243,8 @@ struct AgentEnginesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("AI 引擎").font(.headline).foregroundStyle(Brand.ink)
-            Text("連接你的 AI 帳號,手機那頭才有引擎可用。")
+            Text(L10n.t("AI 引擎")).font(.headline).foregroundStyle(Brand.ink)
+            Text(L10n.t("連接你的 AI 帳號,手機那頭才有引擎可用。"))
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(model.rows) { row in
                 engineRow(row)
@@ -292,17 +292,17 @@ struct AgentEnginesSection: View {
     private func subtitle(_ row: AgentConnectModel.Row) -> String {
         if let note = row.note { return note }
         switch row.phase {
-        case .checking: return "檢查中…"
-        case .notInstalled: return "尚未安裝"
+        case .checking: return L10n.t("檢查中…")
+        case .notInstalled: return L10n.t("尚未安裝")
         case .notLoggedIn:
             return row.cli == .claude
-                ? "已安裝 · 按「連接」會開啟終端機視窗完成授權"
-                : "已安裝 · 按「連接」會開啟瀏覽器授權"
+                ? L10n.t("已安裝 · 按「連接」會開啟終端機視窗完成授權")
+                : L10n.t("已安裝 · 按「連接」會開啟瀏覽器授權")
         case .connecting:
             return row.cli == .claude
-                ? "已開啟終端機視窗 — 完成瀏覽器授權後會自動偵測"
-                : "已開啟瀏覽器 — 在網頁按「授權」即可,完成後自動偵測"
-        case .connected(let account): return account ?? "已連接"
+                ? L10n.t("已開啟終端機視窗 — 完成瀏覽器授權後會自動偵測")
+                : L10n.t("已開啟瀏覽器 — 在網頁按「授權」即可,完成後自動偵測")
+        case .connected(let account): return account ?? L10n.t("已連接")
         }
     }
 
@@ -310,15 +310,15 @@ struct AgentEnginesSection: View {
     private func trailingControl(_ row: AgentConnectModel.Row) -> some View {
         switch row.phase {
         case .notInstalled:
-            Button(row.showInstallHelp ? "收起說明" : "安裝說明") {
+            Button(row.showInstallHelp ? L10n.t("收起說明") : L10n.t("安裝說明")) {
                 model.toggleInstallHelp(row.cli)
             }
             .buttonStyle(.bordered).controlSize(.small)
         case .notLoggedIn:
-            Button("連接") { model.connect(row.cli) }
+            Button(L10n.t("連接")) { model.connect(row.cli) }
                 .buttonStyle(.borderedProminent).tint(Brand.red).controlSize(.small)
         case .connected:
-            Text("已連接").font(.caption).foregroundStyle(Brand.green)
+            Text(L10n.t("已連接")).font(.caption).foregroundStyle(Brand.green)
         case .checking, .connecting:
             EmptyView()
         }
@@ -326,7 +326,7 @@ struct AgentEnginesSection: View {
 
     private func installHelp(_ row: AgentConnectModel.Row) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("打開「終端機」App,貼上這行指令安裝:")
+            Text(L10n.t("打開「終端機」App,貼上這行指令安裝:"))
                 .font(.caption).foregroundStyle(.secondary)
             Text(row.cli.installCommand)
                 .font(.system(.caption, design: .monospaced))
@@ -336,15 +336,15 @@ struct AgentEnginesSection: View {
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Brand.espresso.opacity(0.06)))
             HStack(spacing: 10) {
-                Button(row.justCopied ? "已複製 ✓" : "複製指令") {
+                Button(row.justCopied ? L10n.t("已複製 ✓") : L10n.t("複製指令")) {
                     model.copyInstallCommand(row.cli)
                 }
                 .buttonStyle(.bordered).controlSize(.small)
                 if let url = URL(string: row.cli.websiteURL) {
-                    Link("官網說明", destination: url).font(.caption)
+                    Link(L10n.t("官網說明"), destination: url).font(.caption)
                 }
                 Spacer()
-                Button("我裝好了,重新檢查") { model.probe(row.cli) }
+                Button(L10n.t("我裝好了,重新檢查")) { model.probe(row.cli) }
                     .buttonStyle(.borderless).font(.caption).foregroundStyle(Brand.red)
             }
         }

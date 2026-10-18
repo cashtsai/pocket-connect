@@ -18,15 +18,30 @@ SRC = sorted(glob.glob(os.path.join(ROOT, "Sources/**/*.swift"), recursive=True)
 RES = os.path.join(ROOT, "packaging/Resources")
 LANGS = ["en", "zh-Hant"]
 
-CJK = re.compile(r'"((?:[^"\\]|\\.)*?[一-鿿](?:[^"\\]|\\.)*?)"')
+CJK = re.compile(r'[一-鿿]')
+
+# ⚠️ 掃描字面字串一律用 l10n_wrap 的掃描器,**不要用正則**。
+# 正則會在插值裡的內層引號截斷,把一個字串算成好幾個 —— 於是「還沒包」的數字
+# 會虛高(實測 4 個被算成 20),而那個數字正是用來判斷「翻完了沒」的。
+import importlib.util as _ilu
+_spec = _ilu.spec_from_file_location("l10n_wrap", os.path.join(os.path.dirname(os.path.abspath(__file__)), "l10n_wrap.py"))
+_wrap = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_wrap)
 WRAPPED = re.compile(r'L10n\.(?:t|raw)\(\s*"((?:[^"\\]|\\.)*?)"')
 
 def code_lines(path):
     """去掉註解行 —— 註解裡的中文不是要翻的東西。"""
     out = []
+    prev_ignore = False
     for ln in io.open(path, encoding="utf-8"):
         s = ln.strip()
         if s.startswith("//"):
+            # `// l10n:ignore` 標記下一行刻意不翻(例如只給開發者看的錯誤)。
+            # 連續註解之間要**保持**旗標 —— 標記常常寫在說明的第一行,
+            # 底下還有兩三行理由(第一版就是被下一行註解重置掉的)。
+            prev_ignore = prev_ignore or ("l10n:ignore" in s)
+            continue
+        if prev_ignore:
+            prev_ignore = False
             continue
         out.append(ln)
     return "".join(out)
@@ -36,12 +51,19 @@ def scan():
     for f in SRC:
         if f.endswith("L10n.swift"):
             continue
-        code = code_lines(f)
-        w = {runtime_key(x) for x in WRAPPED.findall(code)}
-        wrapped |= w
-        for m in CJK.findall(code):
-            if runtime_key(m) not in w:
-                bare[os.path.relpath(f, ROOT)].append(m)
+        for ln in code_lines(f).split("\n"):
+            i = 0
+            while i < len(ln):
+                if ln[i] != '"':
+                    i += 1; continue
+                end, body, _ = _wrap.scan_string(ln, i)
+                prefix = ln[:i].rstrip()
+                if CJK.search(body):
+                    if prefix.endswith(("L10n.t(", "L10n.raw(")):
+                        wrapped.add(runtime_key(body))
+                    else:
+                        bare[os.path.relpath(f, ROOT)].append(body)
+                i = end
     return wrapped, bare
 
 INTERP = re.compile(r'\\\((?:[^()]|\([^()]*\))*\)')

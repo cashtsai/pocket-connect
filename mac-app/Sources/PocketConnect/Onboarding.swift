@@ -106,7 +106,7 @@ final class PairingCoordinator {
         timer?.invalidate()
         guard let session = sessionProvider() else { return emit(.needLogin) }
         guard let bridgeToken = BridgeToken.read() else {
-            return emit(.error("找不到 BRIDGE_TOKEN(檢查 LaunchAgent plist 或環境變數)"))
+            return emit(.error(L10n.t("找不到 BRIDGE_TOKEN(檢查 LaunchAgent plist 或環境變數)")))
         }
         // ⚠️ **絕不發出指向共用後備網域的 QR**(2026-10-18 一星風險排查)。
         //
@@ -121,7 +121,7 @@ final class PairingCoordinator {
         //
         // 這裡寧可不發 QR 也不發一個錯的:錯的 QR 會讓他以為配對成功。
         guard lastPayloadHost != Config.sharedFallbackHost else {
-            return emit(.error("對外通道還沒就緒,先不產生配對碼 —— 現在發出去的 QR 會指向錯的位址。\n請稍候幾秒再按一次;若一直這樣,到「連線設定」填你自己的固定網址。"))
+            return emit(.error(L10n.t("對外通道還沒就緒,先不產生配對碼 —— 現在發出去的 QR 會指向錯的位址。\n請稍候幾秒再按一次;若一直這樣,到「連線設定」填你自己的固定網址。")))
         }
         emit(.loading)
         client.pairNew(bridgeToken: bridgeToken, sessionToken: session) { [weak self] result in
@@ -174,7 +174,7 @@ final class PairingCoordinator {
 final class PairingQRView: NSView {
     private let imageView = NSImageView()
     private let statusLabel = NSTextField(labelWithString: "")
-    private let actionButton = NSButton(title: "重新產生配對碼", target: nil, action: nil)
+    private let actionButton = NSButton(title: L10n.t("重新產生配對碼"), target: nil, action: nil)
     var onRegenerate: (() -> Void)?
 
     override init(frame: NSRect) {
@@ -199,23 +199,25 @@ final class PairingQRView: NSView {
         switch state {
         case .needLogin:
             imageView.image = nil
-            statusLabel.stringValue = "請先登入"
+            statusLabel.stringValue = L10n.t("請先登入")
             actionButton.isHidden = true
         case .loading:
-            statusLabel.stringValue = "產生配對碼中…"
+            statusLabel.stringValue = L10n.t("產生配對碼中…")
             actionButton.isHidden = true
         case .active(let img, let secs):
             imageView.image = img
-            statusLabel.stringValue = "用手機掃描配對這台桌機 · 剩 \(secs / 60):\(String(format: "%02d", secs % 60))"
+            // 同上:倒數先格式化成一個變數,插值裡不要有巢狀字串。
+            let mmss = String(format: "%d:%02d", secs / 60, secs % 60)
+            statusLabel.stringValue = L10n.t("用手機掃描配對這台桌機 · 剩 \(mmss)")
             actionButton.isHidden = true
         case .expired:
-            statusLabel.stringValue = "配對碼已過期"
-            actionButton.title = "重新產生配對碼"
+            statusLabel.stringValue = L10n.t("配對碼已過期")
+            actionButton.title = L10n.t("重新產生配對碼")
             actionButton.isHidden = false
         case .error(let msg):
             imageView.image = nil
-            statusLabel.stringValue = "錯誤:\(msg)"
-            actionButton.title = "重試"
+            statusLabel.stringValue = L10n.t("錯誤:\(msg)")
+            actionButton.title = L10n.t("重試")
             actionButton.isHidden = false
         }
     }
@@ -237,10 +239,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let wordmark = NSImageView()   // 真 POCKET wordmark 資產（pocket-wordmark.png），非自製字
     private let tagline = NSTextField(labelWithString: "")
     private let bodyLabel = NSTextField(wrappingLabelWithString:
-        "這台 Mac 會成為你的 Pocket 執行主機。手機當遙控,所有登入與金鑰都留在這台桌機。\n先用 Apple 登入,完成後掃 QR 就能把手機配對上來。")
+        L10n.t("這台 Mac 會成為你的 Pocket 執行主機。手機當遙控,所有登入與金鑰都留在這台桌機。\n先用 Apple 登入,完成後掃 QR 就能把手機配對上來。"))
     private let appleButton = ASAuthorizationAppleIDButton(authorizationButtonType: .signIn,
                                                            authorizationButtonStyle: .black)
-    private let footerLabel = NSTextField(labelWithString: "登入即代表你同意基本使用條款。")
+    private let footerLabel = NSTextField(labelWithString: L10n.t("登入即代表你同意基本使用條款。"))
     private let errorLabel = NSTextField(labelWithString: "")
     private let spinner = NSProgressIndicator()
 
@@ -413,7 +415,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         background.frame = container.bounds
         background.logoSafeZone = nil                    // 配對頁無 logo → 完整雲背景（非特規）
         container.addSubview(background)                 // 奶油底延續到配對頁
-        let heading = NSTextField(labelWithString: "登入成功 · 用手機掃描配對")
+        let heading = NSTextField(labelWithString: L10n.t("登入成功 · 用手機掃描配對"))
         heading.frame = NSRect(x: 30, y: 430, width: 360, height: 24)
         heading.font = .systemFont(ofSize: 16, weight: .semibold)
         heading.textColor = PocketPalette.ink
