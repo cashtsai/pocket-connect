@@ -310,6 +310,59 @@ else
 fi
 codesign --verify --deep --strict --verbose=2 "$APPDIR"
 
+# 公證認證解析。抽成函式是因為現在要公證**兩次**(app 與 dmg),
+# 兩邊共用同一組憑證,不該各寫一份。
+resolve_notary_auth() {
+  [[ ${#NOTARY_AUTH[@]} -gt 0 ]] && return 0
+  NOTARY_AUTH=()
+  if [[ -n "${ASC_KEY_ID:-}" && -n "${ASC_ISSUER_ID:-}" && -n "${ASC_KEY_PATH:-}" ]]; then
+    KEY_PATH_EXPANDED="${ASC_KEY_PATH/#\~/$HOME}"
+    if [[ ! -f "$KEY_PATH_EXPANDED" ]]; then
+      echo "✗ ASC_KEY_PATH 指的檔案不存在：$KEY_PATH_EXPANDED" >&2
+      exit 1
+    fi
+    echo "▸ notarytool 認證方式：App Store Connect API key ($ASC_KEY_ID)"
+    NOTARY_AUTH=(--key "$KEY_PATH_EXPANDED" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
+  elif [[ -n "${APPLE_ID:-}" && -n "${APP_SPECIFIC_PASSWORD:-}" ]]; then
+    echo "▸ notarytool 認證方式：Apple ID + App 專用密碼"
+    NOTARY_AUTH=(--apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD")
+  else
+    echo "✗ 缺公證認證資訊（放 ~/.pocket-release.env）。二選一：" >&2
+    echo "  A) ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_PATH（建議，沿用既有 ASC API key）" >&2
+    echo "  B) APPLE_ID / APP_SPECIFIC_PASSWORD（https://account.apple.com → 登入與安全 → App 專用密碼）" >&2
+    exit 1
+  fi
+}
+NOTARY_AUTH=()
+
+# ── 先公證並 staple **app 本身**,再做 DMG ──────────────────────────────────
+#
+# 2026-10-21 修:這支腳本一直只 staple DMG,**從來沒 staple 過 app**。
+# 兩者是分開的票據,而使用者拖進 Applications 之後執行的是**那顆 app**:
+# DMG 有票據只保證「下載下來的映像檔驗得過」,app 沒票據時第一次啟動仍要
+# 連得到 Apple 的公證服務才驗得過 —— 離線或公司網路擋掉就跳
+# 「Apple 無法檢查是否含有惡意軟體」。
+#
+# 這正是 v0.5.1 那個病的下半身。當時只看到 DMG 缺票據,補了 DMG 卻沒發現
+# app 也要。**有網路的人兩種都不會遇到,所以本機怎麼測都測不出來。**
+#
+# 正確順序(Apple 文件的作法)是兩次提交:
+#   app → zip → notarytool → staple app → 用 staple 過的 app 做 DMG
+#       → notarytool → staple DMG
+# 把 app 放進 DMG 之後才 staple app 沒有用:DMG 裡那份是複本。
+if [[ "$NOTARIZE" == "1" ]]; then
+  resolve_notary_auth
+  echo "▸ notarytool submit(app;共兩次公證,這是第一次)"
+  APP_ZIP="$OUT/Pocket-app-notarize.zip"
+  rm -f "$APP_ZIP"
+  /usr/bin/ditto -c -k --keepParent "$APPDIR" "$APP_ZIP"
+  xcrun notarytool submit "$APP_ZIP" "${NOTARY_AUTH[@]}" --wait
+  rm -f "$APP_ZIP"
+  echo "▸ stapler staple(app)"
+  xcrun stapler staple "$APPDIR"
+  xcrun stapler validate "$APPDIR"
+fi
+
 echo "▸ create .dmg"
 DIST="$OUT/dist"; mkdir -p "$DIST"   # 發行產物統一落 build/dist/
 DMG="$DIST/Pocket-$VER.dmg"
@@ -332,30 +385,29 @@ if [[ "$NOTARIZE" == "1" ]]; then
   # Path A (preferred): App Store Connect API key — same key asc.py already
   # uses for TestFlight uploads, no separate Apple-ID app-specific password.
   # Path B (fallback): Apple ID + app-specific password.
-  NOTARY_AUTH=()
-  if [[ -n "${ASC_KEY_ID:-}" && -n "${ASC_ISSUER_ID:-}" && -n "${ASC_KEY_PATH:-}" ]]; then
-    KEY_PATH_EXPANDED="${ASC_KEY_PATH/#\~/$HOME}"
-    if [[ ! -f "$KEY_PATH_EXPANDED" ]]; then
-      echo "✗ ASC_KEY_PATH 指的檔案不存在：$KEY_PATH_EXPANDED" >&2
-      exit 1
-    fi
-    echo "▸ notarytool 認證方式：App Store Connect API key ($ASC_KEY_ID)"
-    NOTARY_AUTH=(--key "$KEY_PATH_EXPANDED" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
-  elif [[ -n "${APPLE_ID:-}" && -n "${APP_SPECIFIC_PASSWORD:-}" ]]; then
-    echo "▸ notarytool 認證方式：Apple ID + App 專用密碼"
-    NOTARY_AUTH=(--apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD")
-  else
-    echo "✗ 缺公證認證資訊（放 ~/.pocket-release.env）。二選一：" >&2
-    echo "  A) ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_PATH（建議，沿用既有 ASC API key）" >&2
-    echo "  B) APPLE_ID / APP_SPECIFIC_PASSWORD（https://account.apple.com → 登入與安全 → App 專用密碼）" >&2
-    exit 1
-  fi
-  echo "▸ notarytool submit（送 Apple 公證，通常幾分鐘）"
+  resolve_notary_auth
+  echo "▸ notarytool submit（dmg;第二次)"
   xcrun notarytool submit "$DMG" "${NOTARY_AUTH[@]}" --wait
   echo "▸ stapler staple"
   xcrun stapler staple "$DMG"
-  echo "▸ 驗收：spctl 應回 accepted / source=Notarized Developer ID"
-  spctl -a -vvv "$APPDIR" 2>&1 || true
+  echo "▸ 驗收:兩張票據都要在"
+  #
+  # 刻意分開驗 app 與 dmg。2026-10-21 之前這裡只驗 app 的 spctl,而 app 的
+  # spctl 在有網路時**即使沒有票據也會過**(它會上網查)—— 所以「少了票據」
+  # 這件事在這一關是看不出來的。要看就得用 stapler validate,而且兩個都要看。
+  ok=1
+  if xcrun stapler validate "$APPDIR" >/dev/null 2>&1; then
+    echo "  ✅ app 有 staple 票據"
+  else
+    echo "  ❌ app **沒有** staple 票據 —— 離線/受限網路的使用者第一次開會被擋"; ok=0
+  fi
+  if xcrun stapler validate "$DMG" >/dev/null 2>&1; then
+    echo "  ✅ dmg 有 staple 票據"
+  else
+    echo "  ❌ dmg **沒有** staple 票據"; ok=0
+  fi
+  spctl -a -vvv "$APPDIR" 2>&1 | sed 's/^/  /' || true
+  [[ "$ok" == "1" ]] || { echo "✗ 票據不齊 —— 不要發這顆。" >&2; exit 1; }
 fi
 
 echo "✓ done:"
