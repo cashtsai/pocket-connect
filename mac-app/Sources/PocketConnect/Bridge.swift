@@ -90,7 +90,10 @@ enum AppleWebAuthStatus {
 
 struct PairCode {
     let code: String
-    let ttl: Int   // seconds until the code expires (bridge says 5 min)
+    /// 由 bridge 給,**不要寫死也不要猜**。目前預設是 600 秒(10 分鐘);
+    /// 這行註解曾經寫「5 min」而實際是 600 —— 那個錯誤數字後來被抄進
+    /// CloudDiscovery 的使用者可見文案與 README。顯示倒數一律用這個值。
+    let ttl: Int   // seconds until the code expires (bridge decides; 600 by default)
 }
 
 final class BridgeClient {

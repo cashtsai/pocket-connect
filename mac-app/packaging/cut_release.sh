@@ -65,5 +65,30 @@ if [[ "${NO_PUSH:-0}" == "1" ]]; then
 else
   git push
   git push origin "v$new"
-  echo "✓ 已推送 tag v$new — GitHub Actions 會 build 並上傳 .dmg 到 Release。"
+  echo "✓ 已推送 tag v$new。"
 fi
+
+# ⚠️ 2026-10-21 更正:這裡原本寫「GitHub Actions 會 build 並上傳 .dmg 到
+#    Release」。**那是錯的,而且是會害人的錯。** 2026-10-05 起 CI 永不碰正式
+#    release 的資產(理由見 .github/workflows/release.yml:119 —— v0.3/v0.4 的
+#    「本機正貨 vs CI 空包」賽跑,CI 抓不到私有 bridge repo,它建的 DMG 沒有
+#    內建 bridge,乾淨 Mac 裝完是死路)。
+#
+#    照舊文字做的人會推完 tag 就以為發版完成,**而 Release 上根本沒有資產**。
+cat <<EOT
+
+▸ 還沒發版 —— tag 只是 tag。正式發行是本機建 + 自己上傳:
+
+    NOTARIZE=1 BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh
+    gh release create "v$new" "build/dist/Pocket-$new.dmg" \
+        "build/dist/Pocket-$new.dmg.sha256" --title "v$new" --generate-notes
+
+▸ 上傳完**一定要驗使用者真的會下載到的那顆**:
+
+    ./packaging/verify_release.sh "v$new"
+
+  這一步不是形式:線上的 v0.5.1 實測 stapler validate **沒有票據** ——
+  公證做了,但上傳的那顆不是 staple 過的那顆。有網路的人不會遇到,所以
+  **本機怎麼測都測不出來**,只有離線或公司網路擋 Apple 公證服務的使用者會
+  看到「Apple 無法檢查是否含有惡意軟體」。驗的對象必須是下載回來的那一顆。
+EOT

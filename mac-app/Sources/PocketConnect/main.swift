@@ -2,9 +2,15 @@ import AppKit
 import PocketConnectKit
 
 // Pocket — macOS menu-bar app.
-// Supervises the local bridge + Cloudflare tunnel so the phone connects with no
-// setup, shows a QR to download the iOS app, and (M1) does Sign in with Apple +
-// mints an account-bound pairing QR so the phone can pair to THIS desktop.
+//
+// 2026-10-21 更正:這段原本寫「Supervises the local bridge + Cloudflare
+// tunnel」,但同一個檔案 30 行後就寫著「這個 App **不**自己 spawn
+// bridge/cloudflared」。檔頭跟內文互相打架,而檔頭是新人會先讀的那一段。
+//
+// 實際分工:bridge 由 **launchd** 管(`BridgeBootstrap` 裝 LaunchAgent ——
+// 直接 spawn 會跟 launchd 搶埠,而且 App 一關服務就死);cloudflared 由
+// `TunnelManager` 管。這個 App 做的是:探測通不通、顯示下載 iOS App 的 QR、
+// 用 Apple 登入並鑄一張綁定帳號的配對 QR,讓手機配到**這台**桌機。
 // Built as a plain AppKit agent (LSUIElement) so it packages into a .app/.dmg
 // without Xcode.
 

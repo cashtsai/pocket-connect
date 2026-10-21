@@ -5,9 +5,11 @@ name: Release
 on:
   push:
     tags:
-      # Info.plist currently uses the two-component version "0.2". The
-      # verification step below still rejects any tag that is not exactly
-      # "v${CFBundleShortVersionString}".
+      # The verification step below rejects any tag that is not exactly
+      # "v${CFBundleShortVersionString}" — read the version from Info.plist,
+      # do not assume it here. (This comment used to hard-code "0.2"; the
+      # project has been on 0.5.1 for a while, which is exactly the kind of
+      # stale note that makes someone "fix" the wrong thing.)
       - "v*"
 
 permissions:
