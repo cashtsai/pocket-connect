@@ -410,9 +410,19 @@ if [[ "$NOTARIZE" == "1" ]]; then
   [[ "$ok" == "1" ]] || { echo "✗ 票據不齊 —— 不要發這顆。" >&2; exit 1; }
 fi
 
+# 校驗碼。**一定要在 staple 之後算** —— staple 會改動 DMG 的內容,
+# 先算就對不上。
+#
+# 2026-10-21 補:`cut_release.sh` 印的發行指令一直引用
+# `Pocket-<版本>.dmg.sha256`,但**沒有任何東西產生它**(舊的 CI 流程會,
+# 本機流程不會)。照著貼 `gh release create` 會因為找不到檔案而失敗。
+( cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
+echo "▸ sha256: $(cut -d' ' -f1 < "$DMG.sha256")"
+
 echo "✓ done:"
 echo "  app: $APPDIR"
 echo "  dmg: $DMG"
+echo "  sha: $DMG.sha256"
 if [[ "$NOTARIZE" != "1" && "$SIGN_IDENTITY" == "-" ]]; then
   echo "  ⚠ ad-hoc 簽章 — 別台 Mac 會被 Gatekeeper 擋，需右鍵→打開（見 docs/INSTALL_FAQ.md）。"
 fi
