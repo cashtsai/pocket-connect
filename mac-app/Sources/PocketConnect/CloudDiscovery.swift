@@ -119,7 +119,7 @@ extension AppDelegate {
             alert.messageText = "手機請求配對這台 Mac"
             alert.informativeText =
                 "有一台使用你 Apple ID 的手機請求配對這台桌機。\n" +
-                "允許後,該手機會在 5 分鐘內完成配對。\n若不是你本人操作,請拒絕。"
+                "允許後,該手機會在 10 分鐘內完成配對。\n若不是你本人操作,請拒絕。"
             alert.alertStyle = .warning
             alert.addButton(withTitle: "允許配對")
             alert.addButton(withTitle: "拒絕")

@@ -24,7 +24,7 @@
   (`kSecClassGenericPassword`,不同步 iCloud)。
 - **配對 QR**:登入後呼叫 `POST /app/v1/pair/new`(bridge bearer + account session),
   出一次性 code,組成 `pocket://pair?scheme=https&host=<host>&code=<code>`(與
-  `pocket-pair.py` 同格式),畫成 QR;5 分鐘倒數,過期可重新產生。未登入的選單項顯示
+  `pocket-pair.py` 同格式),畫成 QR;倒數時間由 bridge 給(預設 10 分鐘),過期可重新產生。未登入的選單項顯示
   「請先登入」。
 - **發佈**:push tag `v*.*.*` → `.github/workflows/release.yml` 在 ARM64 macOS
   runner 測試、Developer ID 簽章、公證、staple、Gatekeeper 驗收，再上傳 `.dmg`
