@@ -372,6 +372,25 @@ ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
 hdiutil create -volname "Pocket" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
 
+# 簽 DMG 本身。
+#
+# 2026-10-21:這支腳本簽 app、簽 cloudflared,就是**沒簽 DMG**。公證與 staple
+# 都做了,但那是兩回事 —— `spctl -a -t install <dmg>` 要的是**簽章**,沒簽就回
+# `no usable signature`。
+#
+# v0.5.1 當時的排查訊息其實就寫著 `no usable signature`,但被整個歸因成
+# 「缺 staple 票據」。票據確實也缺,所以補了票據之後看起來像修好了 ——
+# 直到 v0.8.0 發出去,`verify_release.sh` 在**下載回來的那顆**上又抓到同一行。
+# 一個診斷對了一半,比完全沒診斷更容易讓人收手。
+#
+# 順序必須是:做 DMG → 簽 DMG → 公證 → staple。簽章會改動檔案內容,
+# 公證之後再簽會讓票據對不上。
+if [[ "$NOTARIZE" == "1" ]]; then
+  echo "▸ codesign (dmg)"
+  codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG"
+  codesign --verify --verbose=2 "$DMG"
+fi
+
 # ── Notarization (public-distribution track) ─────────────────────────────────
 # Submit the .dmg to Apple and staple the ticket so any Mac's Gatekeeper accepts
 # a double-click with no "unidentified developer" prompt. Gated on NOTARIZE=1.
@@ -405,6 +424,14 @@ if [[ "$NOTARIZE" == "1" ]]; then
     echo "  ✅ dmg 有 staple 票據"
   else
     echo "  ❌ dmg **沒有** staple 票據"; ok=0
+  fi
+  # 這一項是 v0.8.0 發出去之後才被 verify_release.sh 抓到的 —— 本機驗收
+  # 當時只看票據,沒看簽章,所以一顆 `no usable signature` 的 DMG 一路過關。
+  # 本機該擋的就在本機擋,不要讓它跑到 releases 上才被攔。
+  if spctl -a -t install "$DMG" >/dev/null 2>&1; then
+    echo "  ✅ dmg 簽章通過 spctl"
+  else
+    echo "  ❌ dmg **沒簽章**(spctl: no usable signature)"; ok=0
   fi
   spctl -a -vvv "$APPDIR" 2>&1 | sed 's/^/  /' || true
   [[ "$ok" == "1" ]] || { echo "✗ 票據不齊 —— 不要發這顆。" >&2; exit 1; }
