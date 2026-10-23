@@ -1,6 +1,7 @@
 import AppKit
 import AuthenticationServices
 import Security
+import PocketConnectKit
 
 // Native Sign in with Apple for AppKit/macOS.
 //
@@ -61,11 +62,11 @@ final class AppleSignInCoordinator: NSObject,
     func authorizationController(controller: ASAuthorizationController,
                                  didCompleteWithAuthorization authorization: ASAuthorization) {
         guard let cred = authorization.credential as? ASAuthorizationAppleIDCredential else {
-            return finish(.failure(BridgeError(message: "非預期的憑證型別")))
+            return finish(.failure(BridgeError(message: L10n.t("非預期的憑證型別"))))
         }
         guard let tokenData = cred.identityToken,
               let token = String(data: tokenData, encoding: .utf8), !token.isEmpty else {
-            return finish(.failure(BridgeError(message: "Apple 未回傳 identityToken")))
+            return finish(.failure(BridgeError(message: L10n.t("Apple 未回傳 identityToken"))))
         }
         let name = [cred.fullName?.givenName, cred.fullName?.familyName]
             .compactMap { $0 }.joined(separator: " ")

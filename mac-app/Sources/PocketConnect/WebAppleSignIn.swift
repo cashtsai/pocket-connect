@@ -1,4 +1,5 @@
 import AppKit
+import PocketConnectKit
 
 /// Browser-based Sign in with Apple for Developer ID distributions.
 ///
@@ -29,7 +30,7 @@ final class WebAppleSignInCoordinator {
                 self.attempt = attempt
                 guard NSWorkspace.shared.open(attempt.authorizationURL) else {
                     return self.finish(.failure(
-                        BridgeError(message: "無法開啟 Apple 登入頁面")
+                        BridgeError(message: L10n.t("無法開啟 Apple 登入頁面"))
                     ))
                 }
                 self.schedulePoll(after: attempt.pollInterval)
@@ -48,7 +49,7 @@ final class WebAppleSignInCoordinator {
     private func schedulePoll(after delay: TimeInterval) {
         guard !finished, let attempt else { return }
         guard Date() < attempt.expiresAt else {
-            return finish(.failure(BridgeError(message: "Apple 登入已逾時,請重新嘗試。")))
+            return finish(.failure(BridgeError(message: L10n.t("Apple 登入已逾時,請重新嘗試。"))))
         }
         let workItem = DispatchWorkItem { [weak self] in self?.poll() }
         pollWorkItem = workItem
@@ -58,7 +59,7 @@ final class WebAppleSignInCoordinator {
     private func poll() {
         guard !finished, let attempt else { return }
         guard Date() < attempt.expiresAt else {
-            return finish(.failure(BridgeError(message: "Apple 登入已逾時,請重新嘗試。")))
+            return finish(.failure(BridgeError(message: L10n.t("Apple 登入已逾時,請重新嘗試。"))))
         }
         bridge.pollWebAppleAuth(attempt) { [weak self] result in
             guard let self, !self.finished else { return }

@@ -150,7 +150,7 @@ final class BridgeClient {
                       authorizationURL.scheme == "https",
                       let expiresAt = Self.number(json["expires_at"])
                 else {
-                    return completion(.failure(BridgeError(message: "登入服務回應格式不完整")))
+                    return completion(.failure(BridgeError(message: L10n.t("登入服務回應格式不完整"))))
                 }
                 let interval = max(1, min(5, Self.number(json["poll_interval"]) ?? 2))
                 completion(.success(AppleWebAuthAttempt(
@@ -187,7 +187,7 @@ final class BridgeClient {
                           let identityToken = identity["identity_token"] as? String,
                           !identityToken.isEmpty else {
                         return completion(.failure(
-                            BridgeError(message: "登入服務回應缺少 Apple identity proof")
+                            BridgeError(message: L10n.t("登入服務回應缺少 Apple identity proof"))
                         ))
                     }
                     completion(.success(.complete(AppleWebIdentity(
@@ -197,11 +197,11 @@ final class BridgeClient {
                         email: identity["email"] as? String
                     ))))
                 case "cancelled":
-                    completion(.success(.failed("已取消 Apple 登入")))
+                    completion(.success(.failed(L10n.t("已取消 Apple 登入"))))
                 case "failed":
-                    completion(.success(.failed("Apple 登入驗證失敗,請重新嘗試。")))
+                    completion(.success(.failed(L10n.t("Apple 登入驗證失敗,請重新嘗試。"))))
                 default:
-                    completion(.failure(BridgeError(message: "登入服務回應了未知狀態")))
+                    completion(.failure(BridgeError(message: L10n.t("登入服務回應了未知狀態"))))
                 }
             }
         }
@@ -212,7 +212,7 @@ final class BridgeClient {
     ) -> Result<AppleAuthResult, Error> {
         guard let session = json["session"] as? [String: Any],
               let token = session["token"] as? String, !token.isEmpty else {
-            return .failure(BridgeError(message: "回應缺少 session.token"))
+            return .failure(BridgeError(message: L10n.t("回應缺少 session.token")))
         }
         let user = json["user"] as? [String: Any]
         return .success(AppleAuthResult(
@@ -240,7 +240,7 @@ final class BridgeClient {
             case .failure(let e): completion(.failure(e))
             case .success(let json):
                 guard let code = json["code"] as? String, !code.isEmpty else {
-                    return completion(.failure(BridgeError(message: "回應缺少 code")))
+                    return completion(.failure(BridgeError(message: L10n.t("回應缺少 code"))))
                 }
                 let ttl = (json["ttl"] as? Int) ?? 300
                 completion(.success(PairCode(code: code, ttl: ttl)))
@@ -262,10 +262,10 @@ final class BridgeClient {
     func listDevices(completion: @escaping (Result<[PairedDevice], Error>) -> Void) {
         func done(_ r: Result<[PairedDevice], Error>) { DispatchQueue.main.async { completion(r) } }
         guard let token = BridgeToken.read() else {
-            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+            return done(.failure(BridgeError(message: L10n.t("找不到 BRIDGE_TOKEN"))))
         }
         guard let url = URL(string: baseURL + "/pair/devices") else {
-            return done(.failure(BridgeError(message: "無效的網址")))
+            return done(.failure(BridgeError(message: L10n.t("無效的網址"))))
         }
         var req = URLRequest(url: url, timeoutInterval: 15)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -294,10 +294,10 @@ final class BridgeClient {
     func revoke(id: String, completion: @escaping (Result<Int, Error>) -> Void) {
         func done(_ r: Result<Int, Error>) { DispatchQueue.main.async { completion(r) } }
         guard let token = BridgeToken.read() else {
-            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+            return done(.failure(BridgeError(message: L10n.t("找不到 BRIDGE_TOKEN"))))
         }
         guard let url = URL(string: baseURL + "/pair/revoke") else {
-            return done(.failure(BridgeError(message: "無效的網址")))
+            return done(.failure(BridgeError(message: L10n.t("無效的網址"))))
         }
         var req = URLRequest(url: url, timeoutInterval: 15)
         req.httpMethod = "POST"
@@ -308,7 +308,7 @@ final class BridgeClient {
             if let err { return done(.failure(err)) }
             let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
             guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                return done(.failure(BridgeError(message: (json?["detail"] as? String) ?? "撤銷失敗")))
+                return done(.failure(BridgeError(message: (json?["detail"] as? String) ?? L10n.t("撤銷失敗"))))
             }
             done(.success((json?["revoked"] as? Int) ?? 0))
         }.resume()
@@ -321,10 +321,10 @@ final class BridgeClient {
     func fetchUsage(completion: @escaping (Result<UsageSnapshot, Error>) -> Void) {
         func done(_ r: Result<UsageSnapshot, Error>) { DispatchQueue.main.async { completion(r) } }
         guard let token = BridgeToken.read() else {
-            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+            return done(.failure(BridgeError(message: L10n.t("找不到 BRIDGE_TOKEN"))))
         }
         guard let url = URL(string: baseURL + "/app/v1/usage") else {
-            return done(.failure(BridgeError(message: "無效的網址")))
+            return done(.failure(BridgeError(message: L10n.t("無效的網址"))))
         }
         var req = URLRequest(url: url, timeoutInterval: 15)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -351,10 +351,10 @@ final class BridgeClient {
     func fetchAgentAuth(completion: @escaping (Result<AgentAuthSnapshot, Error>) -> Void) {
         func done(_ r: Result<AgentAuthSnapshot, Error>) { DispatchQueue.main.async { completion(r) } }
         guard let token = BridgeToken.read() else {
-            return done(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+            return done(.failure(BridgeError(message: L10n.t("找不到 BRIDGE_TOKEN"))))
         }
         guard let url = URL(string: baseURL + "/app/v1/agents/auth") else {
-            return done(.failure(BridgeError(message: "無效的網址")))
+            return done(.failure(BridgeError(message: L10n.t("無效的網址"))))
         }
         var req = URLRequest(url: url, timeoutInterval: 10)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -375,7 +375,7 @@ final class BridgeClient {
                       completion: @escaping (Result<[String: Any], Error>) -> Void) {
         func done(_ r: Result<[String: Any], Error>) { DispatchQueue.main.async { completion(r) } }
         guard let url = URL(string: baseURL + path) else {
-            return done(.failure(BridgeError(message: "無效的網址")))
+            return done(.failure(BridgeError(message: L10n.t("無效的網址"))))
         }
         var req = URLRequest(url: url, timeoutInterval: 15)
         req.httpMethod = "POST"
@@ -387,7 +387,7 @@ final class BridgeClient {
         URLSession.shared.dataTask(with: req) { data, resp, err in
             if let err { return done(.failure(err)) }
             guard let http = resp as? HTTPURLResponse else {
-                return done(.failure(BridgeError(message: "沒有 HTTP 回應")))
+                return done(.failure(BridgeError(message: L10n.t("沒有 HTTP 回應"))))
             }
             let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
             guard (200..<300).contains(http.statusCode) else {

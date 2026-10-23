@@ -1,4 +1,5 @@
 import AppKit
+import PocketConnectKit
 
 // M2 — Claude / Codex account linking via the official CLIs' browser OAuth
 // (spec docs/M2_ACCOUNT_LINKING_SPEC.md, 方案 B). Pocket never touches the OAuth
@@ -73,14 +74,14 @@ final class AccountLinkChecker {
     /// background queue and marshal the result back to main themselves.
     static func checkStatus(_ provider: AIProvider) -> LinkStatus {
         guard let bin = resolveBinary(provider.binaryName) else {
-            return .error("找不到 \(provider.binaryName) CLI，請先安裝")
+            return .error(L10n.t("找不到 \(provider.binaryName) CLI，請先安裝"))
         }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = provider.statusCommand
         let outPipe = Pipe(); p.standardOutput = outPipe
         let errPipe = Pipe(); p.standardError = errPipe
-        do { try p.run() } catch { return .error("執行失敗：\(error.localizedDescription)") }
+        do { try p.run() } catch { return .error(L10n.t("執行失敗：\(error.localizedDescription)")) }
         // Drain both pipes BEFORE waitUntilExit to avoid deadlocking on a full
         // 64 KB OS pipe buffer (status output is tiny, but this is the correct shape).
         let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
@@ -133,7 +134,7 @@ final class AccountLinkChecker {
     static func startLogin(_ provider: AIProvider) throws {
         guard let bin = resolveBinary(provider.binaryName) else {
             throw NSError(domain: "AccountLinking", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "找不到 \(provider.binaryName)"])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.t("找不到 \(provider.binaryName)")])
         }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
@@ -156,7 +157,7 @@ func pollUntilLinked(_ provider: AIProvider, timeout: TimeInterval = 120,
             DispatchQueue.main.async { onUpdate(status) }
             if case .linked = status { return }              // done
             if Date() >= deadline {
-                DispatchQueue.main.async { onUpdate(.error("逾時，請重試")) }
+                DispatchQueue.main.async { onUpdate(.error(L10n.t("逾時，請重試"))) }
                 return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: tick)
@@ -272,43 +273,43 @@ final class ProviderRowView: NSView {
     private func render() {
         switch status {
         case .unknown, .checking:
-            badgeLabel.stringValue = "檢查中…"
+            badgeLabel.stringValue = L10n.t("檢查中…")
             badgeLabel.textColor = PocketPalette.ink.withAlphaComponent(0.5)
             detailLabel.stringValue = ""
-            actionButton.title = "連結 \(provider.displayName)"
+            actionButton.title = L10n.t("連結 \(provider.displayName)")
             actionButton.isEnabled = false
             spinner.startAnimation(nil)
         case .linked(let email, let plan):
-            badgeLabel.stringValue = "已連結 ✓"
+            badgeLabel.stringValue = L10n.t("已連結 ✓")
             badgeLabel.textColor = PocketPalette.green
-            var detail = email ?? "已登入"
+            var detail = email ?? L10n.t("已登入")
             if let plan, !plan.isEmpty { detail += "（\(plan)）" }
             detailLabel.stringValue = detail
             detailLabel.textColor = PocketPalette.ink.withAlphaComponent(0.6)
-            actionButton.title = "重新連結"
+            actionButton.title = L10n.t("重新連結")
             actionButton.isEnabled = true
             spinner.stopAnimation(nil)
         case .unlinked:
-            badgeLabel.stringValue = "未連結"
+            badgeLabel.stringValue = L10n.t("未連結")
             badgeLabel.textColor = PocketPalette.ink.withAlphaComponent(0.5)
             detailLabel.stringValue = ""
-            actionButton.title = "連結 \(provider.displayName)"
+            actionButton.title = L10n.t("連結 \(provider.displayName)")
             actionButton.isEnabled = true
             spinner.stopAnimation(nil)
         case .linking:
-            badgeLabel.stringValue = "連結中…"
+            badgeLabel.stringValue = L10n.t("連結中…")
             badgeLabel.textColor = PocketPalette.blue
-            detailLabel.stringValue = "已開啟瀏覽器，完成登入後會自動偵測…"
+            detailLabel.stringValue = L10n.t("已開啟瀏覽器，完成登入後會自動偵測…")
             detailLabel.textColor = PocketPalette.ink.withAlphaComponent(0.6)
-            actionButton.title = "連結中…"
+            actionButton.title = L10n.t("連結中…")
             actionButton.isEnabled = false
             spinner.startAnimation(nil)
         case .error(let msg):
-            badgeLabel.stringValue = "錯誤"
+            badgeLabel.stringValue = L10n.t("錯誤")
             badgeLabel.textColor = PocketPalette.red
             detailLabel.stringValue = msg
             detailLabel.textColor = PocketPalette.red
-            actionButton.title = "重試"
+            actionButton.title = L10n.t("重試")
             actionButton.isEnabled = true
             spinner.stopAnimation(nil)
         }
@@ -321,14 +322,14 @@ final class AccountLinkingWindowController: NSWindowController {
     private let width: CGFloat = 420
     private lazy var claudeRow = ProviderRowView(provider: .claude, width: width)
     private lazy var codexRow = ProviderRowView(provider: .codex, width: width)
-    private let continueButton = NSButton(title: "完成", target: nil, action: nil)
+    private let continueButton = NSButton(title: L10n.t("完成"), target: nil, action: nil)
 
     init() {
         let height: CGFloat = 380
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: height),
                            styleMask: [.titled, .closable, .fullSizeContentView],
                            backing: .buffered, defer: false)
-        win.title = "帳號連結"
+        win.title = L10n.t("帳號連結")
         win.titleVisibility = .hidden
         win.titlebarAppearsTransparent = true
         win.isMovableByWindowBackground = true
@@ -341,7 +342,7 @@ final class AccountLinkingWindowController: NSWindowController {
         background.autoresizingMask = [.width, .height]
         container.addSubview(background)
 
-        let title = NSTextField(labelWithString: "連結你的 AI 帳號")
+        let title = NSTextField(labelWithString: L10n.t("連結你的 AI 帳號"))
         title.font = .systemFont(ofSize: 18, weight: .bold)
         title.textColor = PocketPalette.ink
         title.alignment = .center
@@ -350,7 +351,7 @@ final class AccountLinkingWindowController: NSWindowController {
         container.addSubview(title)
 
         let subtitle = NSTextField(wrappingLabelWithString:
-            "用官方 CLI 的瀏覽器登入連結你的 Claude / Codex 帳號。憑證由官方 CLI 自己保管，Pocket 不會碰到你的 token。")
+            L10n.t("用官方 CLI 的瀏覽器登入連結你的 Claude / Codex 帳號。憑證由官方 CLI 自己保管，Pocket 不會碰到你的 token。"))
         subtitle.font = .systemFont(ofSize: 12)
         subtitle.textColor = PocketPalette.ink.withAlphaComponent(0.55)
         subtitle.alignment = .center

@@ -47,8 +47,8 @@ public enum CloudGate {
     /// Synchronous part of the gate. `.none` means "may proceed to the async
     /// CKAccountStatus check".
     public static func staticDisableReason() -> String? {
-        if killSwitchOn { return "已由設定停用" }
-        if !hasEntitlement { return "無 iCloud 簽章(entitlement)" }
+        if killSwitchOn { return L10n.t("已由設定停用") }
+        if !hasEntitlement { return L10n.t("無 iCloud 簽章(entitlement)") }
         return nil
     }
 }

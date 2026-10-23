@@ -22,7 +22,7 @@ extension AppDelegate {
             },
             codeIssuer: { [weak self] completion in
                 guard let self else {
-                    return completion(.failure(BridgeError(message: "app 已結束")))
+                    return completion(.failure(BridgeError(message: L10n.t("app 已結束"))))
                 }
                 self.issuePairingCode(completion: completion)
             })
@@ -47,10 +47,10 @@ extension AppDelegate {
     static func describe(_ status: CloudSyncController.Status) -> String {
         switch status {
         case .idle: return "—"
-        case .disabled(let why): return "停用(\(why))"
-        case .starting: return "啟動中…"
-        case .active: return "同步中"
-        case .error(let why): return "錯誤:\(why)"
+        case .disabled(let why): return L10n.t("停用(\(why))")
+        case .starting: return L10n.t("啟動中…")
+        case .active: return L10n.t("同步中")
+        case .error(let why): return L10n.t("錯誤:\(why)")
         }
     }
 
@@ -116,13 +116,16 @@ extension AppDelegate {
                                        respond: @escaping (Bool) -> Void) {
         DispatchQueue.main.async {
             let alert = NSAlert()
-            alert.messageText = "手機請求配對這台 Mac"
+            alert.messageText = L10n.t("手機請求配對這台 Mac")
             alert.informativeText =
-                "有一台使用你 Apple ID 的手機請求配對這台桌機。\n" +
-                "允許後,該手機會在 10 分鐘內完成配對。\n若不是你本人操作,請拒絕。"
+                // 分鐘數要跟 bridge 的 `_PAIR_CODE_TTL`(600s)一致。這一行在合併時
+                // 撞過一次:l10n 那條分支還停在舊的「5 分鐘」。數字錯了不會有人報錯,
+                // 只會讓使用者以為來不及而白白重掃一次 —— 以 bridge 為準,不是以文案為準。
+                L10n.t("有一台使用你 Apple ID 的手機請求配對這台桌機。\n") +
+                L10n.t("允許後,該手機會在 10 分鐘內完成配對。\n若不是你本人操作,請拒絕。")
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "允許配對")
-            alert.addButton(withTitle: "拒絕")
+            alert.addButton(withTitle: L10n.t("允許配對"))
+            alert.addButton(withTitle: L10n.t("拒絕"))
             NSApp.activate(ignoringOtherApps: true)
             respond(alert.runModal() == .alertFirstButtonReturn)
         }
@@ -133,10 +136,10 @@ extension AppDelegate {
     private func issuePairingCode(
         completion: @escaping (Result<(code: String, ttlSeconds: Int), Error>) -> Void) {
         guard let session = Keychain.loadSessionToken() else {
-            return completion(.failure(BridgeError(message: "尚未登入 Apple 帳號")))
+            return completion(.failure(BridgeError(message: L10n.t("尚未登入 Apple 帳號"))))
         }
         guard let bearer = BridgeToken.read() else {
-            return completion(.failure(BridgeError(message: "找不到 BRIDGE_TOKEN")))
+            return completion(.failure(BridgeError(message: L10n.t("找不到 BRIDGE_TOKEN"))))
         }
         bridge.pairNew(bridgeToken: bearer, sessionToken: session) { result in
             completion(result.map { (code: $0.code, ttlSeconds: $0.ttl) })

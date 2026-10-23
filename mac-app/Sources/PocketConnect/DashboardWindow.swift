@@ -186,7 +186,7 @@ final class DashboardViewModel: ObservableObject {
         testResult = nil
         appDelegate.supervisor.probeLatency(url) { [weak self] ok, ms in
             self?.isTesting = false
-            self?.testResult = ok ? String(format: "● 連得到 · %.0fms", ms ?? 0) : "✗ 連不到，檢查網址"
+            self?.testResult = ok ? String(format: L10n.t("● 連得到 · %.0fms"), ms ?? 0) : L10n.t("✗ 連不到，檢查網址")
         }
     }
 
@@ -196,7 +196,7 @@ final class DashboardViewModel: ObservableObject {
             BridgeToken.setOverride(tokenField)
             tokenField = ""
         }
-        testResult = "已儲存"
+        testResult = L10n.t("已儲存")
         refresh()
     }
 
@@ -207,11 +207,25 @@ final class DashboardViewModel: ObservableObject {
         pairingVisible = true
         pairingExpired = false
         qrImage = nil
-        guard Keychain.loadSessionToken() != nil else { pairingStatus = "請先登入"; return }
-        pairingStatus = "檢查中…"
+        guard Keychain.loadSessionToken() != nil else { pairingStatus = L10n.t("請先登入"); return }
+        pairingStatus = L10n.t("檢查中…")
         // 免費模式（自動臨時 tunnel）網址會變，靠 CloudKit 同步給手機 → 必須開 iCloud。
         // 有自訂固定網址（進階）就不需要（網址不變）。
         if appDelegate.customConnectURL == nil {
+            // 沒有自訂固定網址 → QR 的位址就是臨時 tunnel。tunnel 還沒起來時
+            // `effectiveConnectURL` 會退到共用後備網域(維護者的主機),發出去的
+            // QR 會把使用者的手機指向別人的機器 —— 所以**先等 tunnel**,
+            // 不管 iCloud 那關過不過。
+            //
+            // 舊版只有 CloudGate 被關掉的那條分支會等;entitled 那條直接
+            // `mintPairingCode()`,於是「有 iCloud、但 cloudflared 慢了一步」
+            // 就會發出一個錯的 QR。(2026-10-18 一星風險排查)
+            if appDelegate.autoTunnelURL == nil,
+               appDelegate.tunnelManager.currentURL == nil {
+                waitForTunnelThenMint(
+                    cloudGateReason: CloudGate.staticDisableReason() ?? "")
+                return
+            }
             if let reason = CloudGate.staticDisableReason() {
                 if appDelegate.autoTunnelURL != nil {
                     // A signed CloudKit build can keep the phone updated after
@@ -230,7 +244,7 @@ final class DashboardViewModel: ObservableObject {
                     if status == .available {
                         self.mintPairingCode()
                     } else {
-                        self.pairingStatus = "免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。"
+                        self.pairingStatus = L10n.t("免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。")
                     }
                 }
             }
@@ -249,9 +263,9 @@ final class DashboardViewModel: ObservableObject {
         }
 
         appDelegate.tunnelManager.start()
-        pairingStatus = "正在等待臨時連線網址…"
+        pairingStatus = L10n.t("正在等待臨時連線網址…")
         guard attempt < 20 else {
-            pairingStatus = "等不到臨時連線網址。\n請稍後再按一次，或到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。（目前\(reason)）"
+            pairingStatus = L10n.t("等不到臨時連線網址。\n請稍後再按一次，或到下方「連線設定」填固定網址，或改用具備 iCloud entitlement 的簽章版本。（目前\(reason)）")
             return
         }
 
@@ -263,7 +277,7 @@ final class DashboardViewModel: ObservableObject {
 
     private func mintPairingCode() {
         guard let appDelegate else { return }
-        pairingStatus = "產生配對碼中…"
+        pairingStatus = L10n.t("產生配對碼中…")
         pairKnownIDs = Set(devices.map(\.id))
         let coord = PairingCoordinator(client: appDelegate.bridge,
                                        sessionProvider: { Keychain.loadSessionToken() })
@@ -271,17 +285,18 @@ final class DashboardViewModel: ObservableObject {
         coord.onState = { [weak self] state in
             guard let self else { return }
             switch state {
-            case .needLogin: self.pairingStatus = "請先登入"
-            case .loading:   self.pairingStatus = "產生配對碼中…"
+            case .needLogin: self.pairingStatus = L10n.t("請先登入")
+            case .loading:   self.pairingStatus = L10n.t("產生配對碼中…")
             case .active(let img, let secs):
                 self.qrImage = img
-                self.pairingStatus = "用手機掃描配對 · 剩 \(secs / 60):\(String(format: "%02d", secs % 60))"
+                let mmss = String(format: "%d:%02d", secs / 60, secs % 60)
+                self.pairingStatus = L10n.t("用手機掃描配對 · 剩 \(mmss)")
                 self.pairingExpired = false
                 self.ensurePairPoll()
             case .expired:
-                self.pairingExpired = true; self.pairingStatus = "配對碼已過期"; self.stopPairPoll()
+                self.pairingExpired = true; self.pairingStatus = L10n.t("配對碼已過期"); self.stopPairPoll()
             case .error(let m):
-                self.pairingStatus = "錯誤:\(m)"; self.stopPairPoll()
+                self.pairingStatus = L10n.t("錯誤:\(m)"); self.stopPairPoll()
             }
         }
         coord.refresh()
@@ -302,7 +317,7 @@ final class DashboardViewModel: ObservableObject {
                 guard let self, case .success(let list) = result else { return }
                 guard list.contains(where: { !self.pairKnownIDs.contains($0.id) }) else { return }
                 self.devices = list.sorted { ($0.lastSeen ?? .distantPast) > ($1.lastSeen ?? .distantPast) }
-                self.pairingStatus = "配對成功 ✓"
+                self.pairingStatus = L10n.t("配對成功 ✓")
                 self.stopPairPoll()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.stopPairing() }
             }
@@ -365,7 +380,7 @@ struct DashboardView: View {
             }
             Spacer()
             Button { model.resetOnboarding() } label: {
-                Label("登出並重新設定", systemImage: "rectangle.portrait.and.arrow.right")
+                Label(L10n.t("登出並重新設定"), systemImage: "rectangle.portrait.and.arrow.right")
             }
             .buttonStyle(.borderless).foregroundStyle(Brand.red).controlSize(.small)
         }
@@ -380,7 +395,7 @@ struct DashboardView: View {
 
     private var pairingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("配對與設定")
+            sectionTitle(L10n.t("配對與設定"))
             if model.pairingVisible {
                 VStack(spacing: 8) {
                     if let qr = model.qrImage {
@@ -392,15 +407,15 @@ struct DashboardView: View {
                     Text(model.pairingStatus).font(.caption).foregroundStyle(.secondary)
                     HStack(spacing: 8) {
                         if model.pairingExpired {
-                            Button("重新產生") { model.startPairing() }.buttonStyle(.borderedProminent).tint(Brand.red)
+                            Button(L10n.t("重新產生")) { model.startPairing() }.buttonStyle(.borderedProminent).tint(Brand.red)
                         }
-                        Button("關閉") { model.stopPairing() }.buttonStyle(.bordered)
+                        Button(L10n.t("關閉")) { model.stopPairing() }.buttonStyle(.bordered)
                     }
                 }
                 .frame(maxWidth: .infinity)
             } else {
                 Button { model.startPairing() } label: {
-                    Label("配對新裝置", systemImage: "qrcode")
+                    Label(L10n.t("配對新裝置"), systemImage: "qrcode")
                 }
                 .buttonStyle(.borderedProminent).tint(Brand.red)
             }
@@ -411,10 +426,10 @@ struct DashboardView: View {
 
     private var connectionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("連線狀況")
+            sectionTitle(L10n.t("連線狀況"))
             HStack(spacing: 6) {
                 Circle().fill(model.bridgeReachable ? Brand.green : Brand.red).frame(width: 8, height: 8)
-                Text(model.bridgeReachable ? "已連線" : "未連線").foregroundStyle(Brand.ink)
+                Text(model.bridgeReachable ? L10n.t("已連線") : L10n.t("未連線")).foregroundStyle(Brand.ink)
                 if let ms = model.bridgeLatencyMs {
                     Text(String(format: "· %.0fms", ms))
                         .foregroundStyle(.secondary).monospacedDigit()
@@ -433,8 +448,8 @@ struct DashboardView: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(model.isRefreshing)
-                .help("重新檢查連線")
-                .accessibilityLabel("重新檢查連線")
+                .help(L10n.t("重新檢查連線"))
+                .accessibilityLabel(L10n.t("重新檢查連線"))
             }
             if !model.connectHost.isEmpty {
                 Text(model.connectHost).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
@@ -446,24 +461,24 @@ struct DashboardView: View {
 
     private var connectionSettingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("連線設定")
-            Text("你的 Pocket 網址（留空 = 用免費自動連線）")
+            sectionTitle(L10n.t("連線設定"))
+            Text(L10n.t("你的 Pocket 網址（留空 = 用免費自動連線）"))
                 .font(.caption).foregroundStyle(.secondary)
             TextField("https://your-bridge.example.com", text: $model.customURLField)
                 .textFieldStyle(.roundedBorder)
             HStack(spacing: 6) {
                 Circle().fill(model.tokenDetected ? Brand.green : Brand.red).frame(width: 7, height: 7)
-                Text(model.tokenDetected ? "金鑰已自動讀到（來自 Hermes 設定）" : "找不到金鑰 — 手動貼上或檢查 Hermes 設定")
+                Text(model.tokenDetected ? L10n.t("金鑰已自動讀到（來自 Hermes 設定）") : L10n.t("找不到金鑰 — 手動貼上或檢查 Hermes 設定"))
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !model.tokenDetected {
-                SecureField("貼上 BRIDGE_TOKEN", text: $model.tokenField)
+                SecureField(L10n.t("貼上 BRIDGE_TOKEN"), text: $model.tokenField)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 8) {
-                Button("測試連線") { model.testConnection() }
+                Button(L10n.t("測試連線")) { model.testConnection() }
                     .buttonStyle(.bordered).controlSize(.small).disabled(model.isTesting)
-                Button("儲存") { model.saveConnection() }
+                Button(L10n.t("儲存")) { model.saveConnection() }
                     .buttonStyle(.borderedProminent).tint(Brand.red).controlSize(.small)
                 if model.isTesting { ProgressView().controlSize(.small) }
                 if let r = model.testResult {
@@ -477,17 +492,17 @@ struct DashboardView: View {
 
     private var usageSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("AI 用量")
+            sectionTitle(L10n.t("AI 用量"))
             if let usage = model.usage {
                 codexUsageRows(usage.codex)
                 Divider().opacity(0.4)
                 claudeUsageRows(usage.claude)
             } else if let err = model.usageError {
-                Text("讀不到用量資料:\(err)").font(.caption).foregroundStyle(.orange)
+                Text(L10n.t("讀不到用量資料:\(err)")).font(.caption).foregroundStyle(.orange)
             } else {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("讀取用量中…").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.t("讀取用量中…")).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -497,9 +512,9 @@ struct DashboardView: View {
     private func codexUsageRows(_ codex: CodexUsage?) -> some View {
         providerHeader("Codex")
         if let window = codex?.window, codex?.available == true {
-            usageRow("5 小時額度", window)
+            usageRow(L10n.t("5 小時額度"), window)
         } else {
-            Text("用量資料暫不可用(本機沒有 Codex session 記錄)")
+            Text(L10n.t("用量資料暫不可用(本機沒有 Codex session 記錄)"))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -509,23 +524,23 @@ struct DashboardView: View {
         providerHeader("Claude Code")
         if let claude, claude.available {
             if claude.officialSynced {
-                if let five = claude.fiveHour { usageRow("5 小時額度", five) }
-                if let seven = claude.sevenDay { usageRow("7 天額度", seven) }
+                if let five = claude.fiveHour { usageRow(L10n.t("5 小時額度"), five) }
+                if let seven = claude.sevenDay { usageRow(L10n.t("7 天額度"), seven) }
                 if claude.fiveHour == nil && claude.sevenDay == nil {
-                    Text("官方額度視窗已過期,等待下次同步")
+                    Text(L10n.t("官方額度視窗已過期,等待下次同步"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } else {
                 // 降級:沒裝 statusline hook → 只有本機 token 加總,絕不假裝百分比。
                 if let tokens = claude.tokenUsage {
-                    Text("本機估算:輸入 \(Self.tokenText(tokens.inputTokens)) · 輸出 \(Self.tokenText(tokens.outputTokens)) tokens")
+                    Text(L10n.t("本機估算:輸入 \(Self.tokenText(tokens.inputTokens)) · 輸出 \(Self.tokenText(tokens.outputTokens)) tokens"))
                         .font(.caption).foregroundStyle(Brand.ink)
                 }
-                Text("官方額度暫不可用(未安裝 statusline hook,僅顯示本機估算)")
+                Text(L10n.t("官方額度暫不可用(未安裝 statusline hook,僅顯示本機估算)"))
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else {
-            Text("用量資料暫不可用(本機沒有 Claude Code 記錄)")
+            Text(L10n.t("用量資料暫不可用(本機沒有 Claude Code 記錄)"))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -540,7 +555,7 @@ struct DashboardView: View {
             HStack {
                 Text(label).font(.caption).foregroundStyle(Brand.ink)
                 Spacer()
-                Text(String(format: "已用 %.0f%% · 剩 %.0f%%", window.usedPercent, window.remainingPercent))
+                Text(String(format: L10n.t("已用 %.0f%% · 剩 %.0f%%"), window.usedPercent, window.remainingPercent))
                     .font(.caption).foregroundStyle(.secondary)
             }
             GeometryReader { geo in
@@ -552,7 +567,7 @@ struct DashboardView: View {
             }
             .frame(height: 8)
             if let reset = window.resetAt {
-                Text("於 \(Self.resetFormatter.string(from: reset)) 重置")
+                Text(L10n.t("於 \(Self.resetFormatter.string(from: reset)) 重置"))
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -575,14 +590,14 @@ struct DashboardView: View {
     private var devicesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                sectionTitle("已配對裝置")
+                sectionTitle(L10n.t("已配對裝置"))
                 if model.isLoadingDevices { ProgressView().controlSize(.small) }
                 Spacer()
             }
             if let err = model.devicesError, model.devices.isEmpty {
                 Text(err).font(.caption).foregroundStyle(.orange)
             } else if model.devices.isEmpty {
-                Text("尚無配對裝置 — 用上面「配對新裝置」讓手機掃 QR。")
+                Text(L10n.t("尚無配對裝置 — 用上面「配對新裝置」讓手機掃 QR。"))
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(model.devices) { device in
@@ -594,7 +609,7 @@ struct DashboardView: View {
                         }
                         Spacer()
                         Button(role: .destructive) { model.pendingRevokeID = device.id } label: {
-                            Text("解除").font(.caption)
+                            Text(L10n.t("解除")).font(.caption)
                         }
                         .buttonStyle(.borderless)
                     }
@@ -604,17 +619,17 @@ struct DashboardView: View {
             }
         }
         .confirmationDialog(
-            "解除這台裝置的配對？",
+            L10n.t("解除這台裝置的配對？"),
             isPresented: Binding(get: { model.pendingRevokeID != nil },
                                  set: { if !$0 { model.pendingRevokeID = nil } }),
             actions: {
-                Button("解除配對", role: .destructive) {
+                Button(L10n.t("解除配對"), role: .destructive) {
                     if let id = model.pendingRevokeID { model.revoke(id) }
                     model.pendingRevokeID = nil
                 }
-                Button("取消", role: .cancel) { model.pendingRevokeID = nil }
+                Button(L10n.t("取消"), role: .cancel) { model.pendingRevokeID = nil }
             },
-            message: { Text("該裝置需要重新掃配對 QR 才能再連上。") }
+            message: { Text(L10n.t("該裝置需要重新掃配對 QR 才能再連上。")) }
         )
     }
 
@@ -642,9 +657,9 @@ struct DashboardView: View {
     private func subtitle(_ d: BridgeClient.PairedDevice) -> String {
         var parts: [String] = []
         if let p = d.platform, !p.isEmpty { parts.append(p) }
-        if d.accountBound { parts.append("已綁定帳號") }
-        if let s = d.lastSeen { parts.append("最後上線 " + relative.localizedString(for: s, relativeTo: Date())) }
-        return parts.isEmpty ? "已配對" : parts.joined(separator: " · ")
+        if d.accountBound { parts.append(L10n.t("已綁定帳號")) }
+        if let s = d.lastSeen { parts.append(L10n.t("最後上線 ") + relative.localizedString(for: s, relativeTo: Date())) }
+        return parts.isEmpty ? L10n.t("已配對") : parts.joined(separator: " · ")
     }
 }
 
@@ -655,7 +670,7 @@ extension AppDelegate {
             dashboardModel = model
             let hosting = NSHostingController(rootView: DashboardView(model: model))
             let win = NSWindow(contentViewController: hosting)
-            win.title = "Pocket 控制台"
+            win.title = L10n.t("Pocket 控制台")
             win.titleVisibility = .hidden
             win.titlebarAppearsTransparent = true            // 標題列拿掉，奶油底滿版
             win.styleMask.insert(.fullSizeContentView)
