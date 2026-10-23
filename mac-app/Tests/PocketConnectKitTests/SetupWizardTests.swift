@@ -245,6 +245,28 @@ final class SetupWizardTests: XCTestCase {
         XCTAssertTrue(row?.detail.contains("abc.trycloudflare.com") == true)
     }
 
+    /// 免費臨時通道「能用」,但**位址會變** —— 精靈必須在配對當下就講。
+    ///
+    /// 不講的代價是把問題延後到最糟的時刻:使用者人在外面、手機在手上、
+    /// 連不上、而且不知道為什麼。這是免費層唯一真的會卡住人的情境。
+    func testEphemeralTunnelWarnsThatTheAddressChanges() {
+        let reach = ReachabilityReport.make(localIPv4: ["192.168.1.20"], bridgePort: 8081,
+                                            tunnelURL: "https://abc.trycloudflare.com")
+        let row = plan(bridgeState: .ready(.pocketLaunchAgent), agents: nil, reach: reach).row(.reach)
+        XCTAssertTrue(row?.detail.contains("會換") == true, "必須講明網址會變")
+        XCTAssertTrue(row?.detail.contains("Tailscale") == true, "必須給出一勞永逸的那條路")
+        XCTAssertEqual(row?.helpURL, "https://tailscale.com/download/mac")
+    }
+
+    /// 反過來:固定位址(使用者自填)**不該**出現那段警告 —— 它不會變。
+    func testFixedAddressDoesNotWarn() {
+        let reach = ReachabilityReport.make(localIPv4: ["192.168.1.20"], bridgePort: 8081,
+                                            tunnelURL: "https://pocket.example.com")
+        let row = plan(bridgeState: .ready(.pocketLaunchAgent), agents: nil, reach: reach).row(.reach)
+        XCTAssertFalse(row?.detail.contains("會換") == true, "固定位址不會變,不該嚇人")
+        XCTAssertTrue(row?.detail.contains("不會變") == true)
+    }
+
     func testLanOnlyIsHonestWarningAndNeverBlocksQR() {
         let p = plan(bridgeState: .ready(.pocketLaunchAgent),
                      agents: AgentAuthSnapshot(claude: agent(installed: true, loggedIn: true),
