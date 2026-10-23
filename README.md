@@ -1,55 +1,104 @@
 # Pocket Connect
 
-讓使用者**快速建立連線、不用過多設定**的桌面端：裝在跑 Claude Code / Codex / Hermes
-的那台 Mac 上，自動托管 bridge 並對外，手機端零設定連上。
+**English** · [繁體中文](README.zh-Hant.md)
 
-## 組成
-- **`mac-app/`** — **選單列 App**（SwiftPM，無 Dock 圖示）。supervise bridge + 對外通道、
-  Apple 登入、配對 QR、裝置管理、連線設定。可打包成 `.dmg` 安裝。是主力。
-- **`relay/`** — 對外通道參考。用 `cloudflared` 把本機 bridge 對外；MVP 用它驗證直通。
-  App 免費模式已內建自動臨時 tunnel，這個目錄是固定網址（進階）的參考。
+The desktop half of [Pocket](https://pocket.shan.house). Install it on the Mac where
+your agents already run — Claude Code, Codex, Hermes personas — and your phone pairs
+by scanning one QR code. No addresses to type, no tokens to paste.
 
-## 現況（2026-07-23）
-- ✅ **桌面 App v0.2**：品牌化控制台、Apple 登入、配對 QR、裝置清單/解除。
-- ✅ **免費零設定連線**：桌面自動開 cloudflared 臨時 tunnel、掛掉自動重啟、網址經
-  CloudKit 傳手機；免費模式強制開 iCloud。進階可填自己的固定網址。
-- ✅ **公開發佈底盤**：`build_dmg.sh` 已能產出內含 cloudflared、Developer ID 簽章、
-  Apple 公證與 stapled ticket 的 `.dmg`；Production CloudKit 與公開版 Web Sign in
-  with Apple 已部署。
-- ✅ **自動 Release**：`v0.2` 已由 GitHub Actions 在乾淨的 macOS runner 完成測試、
-  Developer ID 簽章、Apple 公證、staple 與 Release 發布。
-  [下載 Pocket-0.2.dmg](https://github.com/cashtsai/pocket-connect/releases/tag/v0.2)
-  見 [`docs/M4_DEVELOPER_ID_SIGNING_SPEC.md`](docs/M4_DEVELOPER_ID_SIGNING_SPEC.md)。
+It hosts a local bridge, opens an outbound tunnel so the phone can reach you from
+anywhere, and hands the phone a pairing QR.
 
-## 下載安裝
-1. 到 [Releases](https://github.com/cashtsai/pocket-connect/releases) 下載最新的
-   `Pocket-<版本>.dmg`（可用附帶的 `.sha256` 核對）。
-2. 雙擊 `.dmg` → 把 **Pocket** 拖進 **Applications**。
-3. 從 Applications 打開 Pocket → 選單列出現口袋圖示（無 Dock 圖示）。
+## What's here
 
-正式 `.dmg` 已用 **Developer ID 簽章 + Apple 公證（notarized）並 staple**，任何 Mac
-雙擊即可安裝，不會出現「無法確認開發者」，也不需要右鍵繞過 Gatekeeper。
-完整步驟、免費模式為何要開 iCloud、配對、常見狀況：**[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**。
+| | |
+|---|---|
+| **`mac-app/`** | The menu-bar app (SwiftPM, no Dock icon). Environment check and one-click bridge install, Apple sign-in, pairing QR, device list, connection settings. Packages into a signed `.dmg`. This is the product. |
+| **`relay/`** | Reference material for running your own fixed address instead of the built-in temporary tunnel. Optional. |
 
-## 開發 / 打包
+## Install
+
+1. Download the latest `Pocket-<version>.dmg` from
+   [Releases](https://github.com/cashtsai/pocket-connect/releases)
+   (verify with the bundled `.sha256` if you like).
+2. Open it and drag **Pocket** into **Applications**.
+3. Launch it — a pocket icon appears in the menu bar. There is no Dock icon.
+
+Releases are **Developer ID signed, notarized, and stapled — both the app and the
+disk image**, so they install on any Mac, including offline or behind a network that
+blocks Apple's notary service.
+
+> Before v0.8.0 only the disk image carried a ticket, so the app itself could still
+> trip Gatekeeper on first launch without network. Fixed; `packaging/build_dmg.sh`
+> now refuses to finish if either ticket is missing.
+
+**You also need**, and Pocket will not install these for you:
+
+- **Python 3.10+** — macOS ships 3.9, which cannot run the bridge. `brew install python`.
+- **Claude Code and/or Codex**, installed and signed in. Pocket reads their login
+  state; it never touches their credentials.
+
+Full walkthrough, why free mode asks for iCloud, pairing, and troubleshooting:
+**[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**.
+End-user questions about the phone app live in the
+[FAQ on the website](https://pocket.shan.house/#faq).
+
+## Connecting
+
+Two ways to reach your Mac from the phone:
+
+- **Free, zero-config** — the desktop opens a temporary Cloudflare tunnel and restarts
+  it automatically if it drops. The address changes each time, so you scan a fresh QR
+  after a restart.
+- **Your own fixed address** — put a Tailscale address or your own reverse proxy into
+  Connection Settings. The address never changes, and free mode's iCloud requirement
+  no longer applies.
+
+There is also a **login-free pairing page** served by the bridge itself — the installer
+prints the full link at the end of its output. That path needs neither an Apple sign-in
+nor iCloud, and is the shortest way to pair.
+
+## Developing
+
 ```bash
 cd mac-app
-swift run                          # 直接跑（選單列出現口袋圖示）
-./packaging/build_dmg.sh           # 產出 build/dist/Pocket-<版本>.dmg（ad-hoc 簽）
-NOTARIZE=1 ./packaging/build_dmg.sh # Developer ID 正式簽章、公證、staple
-./packaging/cut_release.sh patch   # bump 版號 → tag → CI 出 Release
+swift build && swift test
+swift run                            # menu-bar icon appears
+
+./packaging/build_dmg.sh             # ad-hoc signed .dmg, for local testing
+NOTARIZE=1 BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh   # the real thing
 ```
-更多結構與簽章細節見 [`mac-app/README.md`](mac-app/README.md)。
 
-## 定位（與其他專案的關係）
-- **OSS**：這個桌面 App 的「區網直連 / BYO tunnel / 自動臨時 tunnel」基本款。
-- **善字營（商業）**：託管 relay + 帳號 + 連上自動開好 Hermes + 一鍵安裝。便利性與託管 = 付費價值。
-- 連線拓撲走「各自自架」（每人用自己的 Mac 當主機）；免費/進階兩層。
+Releasing is **local, not CI**:
 
-## 授權（License）
-**Apache License 2.0**（見 [`LICENSE`](LICENSE)）—— 永久、免權利金、含明確專利授權。
-自由 fork、修改、商用；只請保留授權與著作權標示。
+```bash
+./packaging/cut_release.sh minor     # bump version, tag, push — then it tells you what's left
+gh release create "vX.Y.Z" build/dist/Pocket-X.Y.Z.dmg build/dist/Pocket-X.Y.Z.dmg.sha256 ...
+./packaging/verify_release.sh vX.Y.Z # verifies the asset people actually download
+```
 
-專利部分另附一份 Tesla 式的善意承諾（見 [`PATENTS.md`](PATENTS.md)）：**只要你善意
-使用，我們不會對你發動專利訴訟。** 唯品牌名/商標（*Pocket* 字標與口袋 icon）不在開源
-範圍內——程式碼隨你縫,別掛我們的名做山寨。
+CI never touches release assets — it only runs tests and checks that a DMG can be
+assembled. The reason is in `.github/workflows/release.yml`: CI cannot reach the
+private bridge repo, so the DMG it builds has no bridge inside, and twice it raced a
+real local build onto `releases/latest`.
+
+**Always run `verify_release.sh` after uploading.** It downloads the published asset
+and checks signature, notarization, both staple tickets, and the bundled payload — a
+local build passing proves nothing about what got uploaded.
+
+Structure and signing details: [`mac-app/README.md`](mac-app/README.md).
+
+## Licence
+
+**Apache License 2.0** (see [`LICENSE`](LICENSE)) — perpetual, royalty-free, with an
+explicit patent grant. Fork it, modify it, ship it commercially; just keep the licence
+and copyright notice.
+
+A Tesla-style patent pledge is in [`PATENTS.md`](PATENTS.md): **use it in good faith
+and we will not sue you over patents.** The brand is not covered — the *Pocket*
+wordmark and pocket icon stay ours. Take the code, not the name.
+
+> **Note on comments**: identifiers, APIs and docs are in English, but the explanatory
+> comments in the source are in Traditional Chinese. They record specific incidents
+> rather than restating the code, which is why they have not been stripped. If one
+> blocks you, ask in an issue — translating a block on request is welcome.
