@@ -92,7 +92,7 @@ claude auth logout
 2. 點「**連結 Claude Code**」→ 列變「連結中…」+ spinner，自動開瀏覽器到 claude.ai 登入頁。
 3. 在瀏覽器完成 OAuth（登入 + 授權）。
 4. 回 App，**不用做任何事**，App 每 2 秒輪詢一次，2 分鐘內應自動變「已連結 ✓」，
-   顯示 `sendtocash@gmail.com（max）`。
+   顯示 `owner@example.com（max）`。
 
 ### 5b. Codex
 ```bash

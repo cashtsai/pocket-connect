@@ -17,7 +17,7 @@ $ claude auth status --json
   "loggedIn": true,
   "authMethod": "claude.ai",
   "apiProvider": "firstParty",
-  "email": "sendtocash@gmail.com",
+  "email": "owner@example.com",
   "orgId": "...",
   "orgName": "...",
   "subscriptionType": "max"
@@ -59,7 +59,7 @@ codex login                      # 開瀏覽器走 ChatGPT OAuth（無子指令�
 │  連結你的 AI 帳號              │
 │                               │
 │  Claude Code    [已連結 ✓]    │
-│  sendtocash@gmail.com (Max)   │
+│  owner@example.com (Max)   │
 │  [ 重新連結 ]                  │
 │                               │
 │  Codex          [未連結]      │
