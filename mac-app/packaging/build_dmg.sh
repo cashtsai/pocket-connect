@@ -111,11 +111,15 @@ if [[ "$BUNDLE_BRIDGE" == "1" ]]; then
   # README 換成出貨版(repo 版是內部運維文件,含拓撲細節)。
   cp packaging/BRIDGE_README.md "$APPDIR/Contents/Resources/bridge/README.md"
   python3 packaging/sanitize_bridge_payload.py "$APPDIR/Contents/Resources/bridge"
-  # 消毒後硬守門:任何私人名/私有主機/本機路徑殘留 = 打包失敗。寧可不出貨,
-  # 不可把私人資訊再裝進發行物(新增的洩漏源會在這裡被抓,不會默默出門)。
-  if grep -rniIE 'yuanfang|袁方|善彰|pantianqing|潘天晴|shuijing|水鏡|tsai\.cash|tail905550|100\.67\.0\.12|/Users/xcash|fliper|sendtocash|xcash' \
-       "$APPDIR/Contents/Resources/bridge" 2>/dev/null | head -10 | grep .; then
-    echo "✗ bridge payload 消毒後仍有私人資訊殘留(上列),中止打包" >&2
+  # 消毒後硬守門:任何私人識別殘留 = 打包失敗。寧可不出貨,不可把私人資訊
+  # 再裝進發行物。
+  #
+  # 2026-10-23:這裡原本是一行 `grep -rniIE '<把所有識別明文列出來>'`。
+  # 那行 grep 自己就是那份資訊**最集中、最好找**的清單 —— 而這是公開 repo。
+  # 改成 verify_payload_clean.py:形狀規則(不含識別)+ salted SHA-256,
+  # 兩層都不揭露任何東西,而且形狀那層連**別人的** tailnet 也擋得到。
+  if ! python3 packaging/verify_payload_clean.py "$APPDIR/Contents/Resources/bridge"; then
+    echo "✗ bridge payload 消毒後仍有私人資訊殘留,中止打包" >&2
     exit 1
   fi
   # 消毒不可破壞 Python 語法(替換表只動字串,不動結構;這裡釘死)。

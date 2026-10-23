@@ -97,5 +97,5 @@
 - bridge 目前掛在 `cashtsai/hermes-studio-bridge`(private repo,repo 名跟資料夾
   `hermes-openwebui-bridge` 不同,不要搞混)。
 - 正式環境 host 是 `https://pocket.tsai.cash`(Cloudflare Tunnel),不是
-  `cashcamp-1.tail905550.ts.net`(那是 `pocket-pair.py` 裡的 Tailscale Funnel 舊值,
+  `<host>.<tailnet>.ts.net`(那是 `pocket-pair.py` 裡的 Tailscale Funnel 舊值,
   桌面 App 要用 Cloudflare tunnel 這個當預設,因為手機不裝 Tailscale 也要能連)。

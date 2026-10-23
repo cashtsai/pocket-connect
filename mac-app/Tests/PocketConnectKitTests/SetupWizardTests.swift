@@ -74,12 +74,12 @@ final class SetupWizardTests: XCTestCase {
     func testOnlyClaudeLoggedInAllowsQR() {
         let p = plan(bridgeState: .ready(.pocketLaunchAgent),
                      agents: AgentAuthSnapshot(
-                        claude: agent(installed: true, loggedIn: true, account: "cash@tsai.cash · max"),
+                        claude: agent(installed: true, loggedIn: true, account: "owner@example.com · max"),
                         codex: agent(installed: false, loggedIn: nil)))
         XCTAssertEqual(p.gate, .ready)
         XCTAssertTrue(p.gate.allowsQR, "一個引擎登入好就夠用了")
         XCTAssertEqual(p.row(.claude)?.status, .ok)
-        XCTAssertTrue(p.row(.claude)?.detail.contains("cash@tsai.cash") == true)
+        XCTAssertTrue(p.row(.claude)?.detail.contains("owner@example.com") == true)
         // Codex 沒裝只是「少一個選擇」→ 黃燈,不是紅燈。
         XCTAssertEqual(p.row(.codex)?.status, .warning)
         XCTAssertEqual(p.row(.qr)?.status, .ok)
@@ -90,7 +90,7 @@ final class SetupWizardTests: XCTestCase {
         // codex 回的是 "Logged in using ChatGPT" —— 使用者不該看到這串英文。
         XCTAssertEqual(SetupWizardPlanner.prettyAccount("Logged in using ChatGPT"), "ChatGPT 帳號")
         XCTAssertEqual(SetupWizardPlanner.prettyAccount("Logged in using an API key"), "API 金鑰")
-        XCTAssertEqual(SetupWizardPlanner.prettyAccount("cash@tsai.cash · max"), "cash@tsai.cash · max")
+        XCTAssertEqual(SetupWizardPlanner.prettyAccount("owner@example.com · max"), "owner@example.com · max")
         XCTAssertNil(SetupWizardPlanner.prettyAccount("some unexpected cli chatter"))
         XCTAssertNil(SetupWizardPlanner.prettyAccount("   "))
 
@@ -271,12 +271,12 @@ final class SetupWizardTests: XCTestCase {
 
     func testParseAgentAuthHappyPath() throws {
         let json = """
-        {"claude":{"installed":true,"logged_in":true,"account":"cash@tsai.cash · max"},
+        {"claude":{"installed":true,"logged_in":true,"account":"owner@example.com · max"},
          "codex":{"installed":true,"logged_in":false,"account":null}}
         """
         let snap = try XCTUnwrap(AgentAuthSnapshot.parse(Data(json.utf8)))
         XCTAssertTrue(snap.claude.isUsable)
-        XCTAssertEqual(snap.claude.account, "cash@tsai.cash · max")
+        XCTAssertEqual(snap.claude.account, "owner@example.com · max")
         XCTAssertFalse(snap.codex.isUsable)
         XCTAssertNil(snap.codex.account)
         XCTAssertTrue(snap.hasUsableAgent)
