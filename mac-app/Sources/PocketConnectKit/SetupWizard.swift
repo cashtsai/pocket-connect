@@ -103,6 +103,22 @@ public struct ReachabilityReport: Equatable {
             }
         }
 
+        /// 這條的位址會不會變。
+        ///
+        /// 免費的 Cloudflare 臨時通道**每次桌面重開就換一個網址**,而手機記的
+        /// 是配對當下那個 —— 於是「在家好好的,出門連不上」。這是免費層唯一
+        /// 真的會卡住人的情境,所以精靈必須在**配對當下**就講,而不是讓他出門
+        /// 才發現。
+        ///
+        /// 判準用主機名:臨時通道一定掛在 `trycloudflare.com`;使用者自己填的
+        /// 固定位址不會。LAN 與 tailnet 的位址本來就不會變。
+        public var addressIsEphemeral: Bool {
+            switch self {
+            case .lan, .tailnet: return false
+            case .tunnel(let a): return a.contains("trycloudflare.com")
+            }
+        }
+
         public var displayName: String {
             switch self {
             case .lan: return L10n.t("同網路直連")
@@ -380,14 +396,28 @@ public enum SetupWizardPlanner {
             return SetupWizardRow(step: .reach, status: .pending, detail: L10n.t("檢查中…"))
         }
         if let remote = reach.remoteChannel {
+            guard remote.addressIsEphemeral else {
+                return SetupWizardRow(
+                    step: .reach, status: .ok,
+                    detail: L10n.t("走「\(remote.displayName)」\(pretty(remote.address)) —— 出門在外也連得到,而且這個位址不會變。"))
+            }
+            // 能用,但**位址會變**。狀態刻意留 .ok(它現在真的是通的),
+            // 用文案把代價講清楚 —— 標成警告會讓人以為沒設定好。
+            //
+            // 三句各自成一個 key(而不是整段一個):它們是三個完整句子,
+            // 分開譯語序才自由,也不必為了改一個字重譯整段。
             return SetupWizardRow(
                 step: .reach, status: .ok,
-                detail: L10n.t("走「\(remote.displayName)」\(pretty(remote.address)) —— 出門在外也連得到。"))
+                detail: L10n.t("出門在外連得到:\(pretty(remote.address))(免費臨時通道)。")
+                      + L10n.t("⚠️ 這個網址每次重開桌面就會換,換了手機要重掃 QR。")
+                      + L10n.t("裝 Tailscale 就一勞永逸 —— 位址永遠不變,按右邊。"),
+                helpURL: "https://tailscale.com/download/mac")
         }
         if let lan = reach.channels.first {
             return SetupWizardRow(
                 step: .reach, status: .warning,
-                detail: L10n.t("只能在同一個網路用(現在的位址 \(pretty(lan.address)))。出門想連就裝 Tailscale,按右邊看怎麼做。"),
+                detail: L10n.t("現在只能在同一個網路用(位址 \(pretty(lan.address)))。")
+                      + L10n.t("出門想連就裝 Tailscale —— 裝一次,之後位址永遠不變、不必再掃 QR。按右邊。"),
                 helpURL: "https://tailscale.com/download/mac")
         }
         return SetupWizardRow(

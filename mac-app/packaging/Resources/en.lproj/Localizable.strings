@@ -1,8 +1,8 @@
 /* Pocket desktop — en. key = 繁體中文原字串（與 iOS L10n 一致）。
    由 packaging/l10n_extract.py --sync 產生；既有譯文不會被覆蓋。 */
 
-"\n\n現有安裝未被更動。可以到下載頁手動更新。" = "\\n\\nYour existing install wasn’t touched. You can update manually from the download page.";
-"\n下載與驗證中,完成後會自動重新啟動。" = "\\nDownloading and verifying — Pocket will restart itself when it’s done.";
+"\n\n現有安裝未被更動。可以到下載頁手動更新。" = "\n\nYour existing install wasn’t touched. You can update manually from the download page.";
+"\n下載與驗證中,完成後會自動重新啟動。" = "\nDownloading and verifying — Pocket will restart itself when it’s done.";
 "  [%@] %@ %@ — %@（來源:%@）" = "  [%@] %@ %@ — %@ (source: %@)";
 "  [已濾除:此行含 token 字樣]" = "  [redacted: this line contains the word “token”]";
 "  iCloud 發現:%@" = "  iCloud discovery: %@";
@@ -44,10 +44,10 @@
 "Pocket 安裝的 bridge" = "Bridge installed by Pocket";
 "Pocket 控制台" = "Pocket control panel";
 "Pocket 更新" = "Pocket update";
-"Pocket 會繼續在背景執行（配對、連線都照常）。\n\n之後要再顯示圖示，從「應用程式」或 Launchpad 重新開啟 Pocket 就會回來。" = "Pocket keeps running in the background (pairing and connections carry on).\\n\\nTo bring the icon back, open Pocket again from Applications or Launchpad.";
+"Pocket 會繼續在背景執行（配對、連線都照常）。\n\n之後要再顯示圖示，從「應用程式」或 Launchpad 重新開啟 Pocket 就會回來。" = "Pocket keeps running in the background (pairing and connections carry on as normal).\n\nTo bring the icon back, open Pocket again from Applications or Launchpad.";
 "Pocket 有新版本:%@" = "A new version of Pocket is available: %@";
 "Pocket 診斷報告 — %@" = "Pocket diagnostic report — %@";
-"Pocket 需要在這台 Mac 上跑一個小型服務(Bridge),手機才連得上。\n下面是這台機器的檢查結果。" = "Pocket needs a small service (Bridge) running on this Mac so your phone can reach it.\\nHere’s how this machine checks out.";
+"Pocket 需要在這台 Mac 上跑一個小型服務(Bridge),手機才連得上。\n下面是這台機器的檢查結果。" = "Pocket needs a small service (Bridge) running on this Mac before your phone can connect.\nHere’s how this machine checks out.";
 "Pocket.app 內附的 bridge" = "Bridge bundled inside Pocket.app";
 "Python 3.10 以上" = "Python 3.10 or newer";
 "Tailscale 私網" = "Tailscale private network";
@@ -66,6 +66,7 @@
 "● 已登入" = "● Signed in";
 "● 已連線" = "● Connected";
 "● 連得到 · %.0fms" = "● Reachable · %.0fms";
+"⚠️ 這個網址每次重開桌面就會換,換了手機要重掃 QR。" = "⚠️ This address changes every time the desktop app restarts — and when it does, your phone has to scan a new QR code.";
 "✓ bridge 已就緒" = "✓ bridge ready";
 "✗ 啟動後仍沒有回應" = "✗ started but still not responding";
 "✗ 安裝完成但 bridge 沒有回應" = "✗ installed but bridge isn’t responding";
@@ -79,18 +80,19 @@
 "下載失敗(%@)。" = "Download failed (%@).";
 "下載手機 App…" = "Get the phone app…";
 "你的 Pocket 網址（留空 = 用免費自動連線）" = "Your Pocket address (leave empty for the free automatic connection)";
-"你自己架的 Bridge 需要一組金鑰,Pocket 才能幫你產生配對 QR。\n沒有的話讓 Pocket 幫你裝一套就不用管這個。" = "A Bridge you host yourself needs a key before Pocket can generate a pairing QR.\\nIf you let Pocket install one for you, you don’t need to deal with this.";
+"你自己架的 Bridge 需要一組金鑰,Pocket 才能幫你產生配對 QR。\n沒有的話讓 Pocket 幫你裝一套就不用管這個。" = "Your self-hosted Bridge needs a key before Pocket can generate a pairing QR code.\nIf you’d rather not deal with this, let Pocket install one for you.";
 "使用既有的 bridge(外部管理)—— 不需要 Pocket 的 LaunchAgent。" = "Using an existing bridge (externally managed) — Pocket’s LaunchAgent isn’t needed.";
 "停用(%@)" = "Disabled (%@)";
 "儲存" = "Save";
-"允許後,該手機會在 10 分鐘內完成配對。\n若不是你本人操作,請拒絕。" = "Once allowed, that phone has 10 minutes to finish pairing.\\nIf this wasn’t you, decline.";
+"允許後,該手機會在 10 分鐘內完成配對。\n若不是你本人操作,請拒絕。" = "Once allowed, that phone has 10 minutes to finish pairing.\nIf this wasn’t you, decline.";
 "允許配對" = "Allow pairing";
 "先把上面的 Bridge 弄好,手機才有東西可以連。" = "Get Bridge running first — there's nothing for your phone to connect to until then.";
-"免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。" = "Free mode needs iCloud turned on before pairing (System Settings → your Apple ID → iCloud),\\nor enter your own fixed address under Connection settings below.";
+"免費模式要先開啟 iCloud（系統設定 → 你的 Apple ID → iCloud）才能配對；\n或到下方「連線設定」填你自己的固定網址。" = "Free mode needs iCloud turned on before it can pair (System Settings → your Apple ID → iCloud);\nor set your own fixed address under Connection settings below.";
 "公網通道" = "Public tunnel";
+"出門在外連得到:%@(免費臨時通道)。" = "Reachable when you’re out: %@ (free temporary tunnel).";
+"出門想連就裝 Tailscale —— 裝一次,之後位址永遠不變、不必再掃 QR。按右邊。" = "To connect from outside, install Tailscale — set it up once and the address never changes again, so you’ll never rescan a QR code. Tap at right.";
 "前往下載頁" = "Open download page";
 "取消" = "Cancel";
-"只能在同一個網路用(現在的位址 %@)。出門想連就裝 Tailscale,按右邊看怎麼做。" = "Works only on this network (currently %@). To reach it from anywhere, install Tailscale — tap on the right to see how.";
 "同步中" = "Syncing";
 "同網路直連" = "Same-network direct";
 "問不到" = "Couldn’t check";
@@ -117,7 +119,7 @@
 "官方額度視窗已過期,等待下次同步" = "Official quota window expired — waiting for the next sync";
 "官網說明" = "Official docs";
 "寫入暫存失敗:%@" = "Couldn’t write to the temporary folder: %@";
-"對外通道還沒就緒,先不產生配對碼 —— 現在發出去的 QR 會指向錯的位址。\n請稍候幾秒再按一次;若一直這樣,到「連線設定」填你自己的固定網址。" = "The public route isn’t ready, so no pairing code yet — a QR made now would point at the wrong address.\nWait a few seconds and tap again. If it keeps happening, set your own fixed address under Connection settings.";
+"對外通道還沒就緒,先不產生配對碼 —— 現在發出去的 QR 會指向錯的位址。\n請稍候幾秒再按一次;若一直這樣,到「連線設定」填你自己的固定網址。" = "The outside tunnel isn’t ready, so Pocket won’t mint a pairing code yet — a QR code issued now would point at the wrong address.\nWait a few seconds and try again; if it stays this way, set your own fixed address under Connection settings.";
 "尚未安裝" = "Not installed";
 "尚未安裝。Pocket 不會替你安裝 AI CLI —— 請自行用下面這行指令裝好。" = "Not installed. Pocket won’t install AI CLIs for you — run the command below to install it yourself.";
 "尚未建立 —— 按「一鍵安裝」會自動寫入並啟動。" = "Not created yet — tap Install and Pocket writes it and starts it for you.";
@@ -180,7 +182,7 @@
 "暫時連不到伺服器,請稍後再試。" = "Can’t reach the server right now. Please try again shortly.";
 "更新會下載公證過的新版、驗證簽章後原地換新並重新啟動。" = "Updating downloads a notarized build, verifies its signature, swaps it in place and restarts.";
 "最後上線 " = "Last seen ";
-"有一台使用你 Apple ID 的手機請求配對這台桌機。\n" = "A phone signed in with your Apple ID wants to pair with this Mac.\n";
+"有一台使用你 Apple ID 的手機請求配對這台桌機。\n" = "A phone signed in with your Apple ID is asking to pair with this Mac.\n";
 "有了,版本夠新。" = "Found, and new enough.";
 "服務活著,但少了配對用的金鑰。到「連線設定」把金鑰貼上就好。" = "The service is running but the pairing key is missing. Paste it under Connection settings.";
 "服務活著但讀不到金鑰,配對會失敗。請到「連線設定」把 BRIDGE_TOKEN 貼上。" = "The service is running but its key can’t be read, so pairing will fail. Paste BRIDGE_TOKEN under Connection settings.";
@@ -217,6 +219,7 @@
 "照著下面走完,手機掃 QR 就能馬上用。" = "Work through the list below, scan the QR with your phone, and you’re going.";
 "版本:%@（%@）" = "Version: %@ (%@)";
 "狀態列隱藏" = "Hide menu bar icon";
+"現在只能在同一個網路用(位址 %@)。" = "Right now this only works on the same network (address %@).";
 "環境變數" = "Environment variable";
 "產生配對碼中…" = "Creating a pairing code…";
 "用官方 CLI 的瀏覽器登入連結你的 Claude / Codex 帳號。憑證由官方 CLI 自己保管，Pocket 不會碰到你的 token。" = "Link your Claude / Codex accounts using each official CLI’s browser sign-in. The CLIs keep their own credentials — Pocket never touches your tokens.";
@@ -255,6 +258,7 @@
 "背景服務(LaunchAgent)" = "Background service (LaunchAgent)";
 "自動安裝 %@" = "Install %@ for me";
 "自動更新沒有完成" = "The update didn’t finish";
+"裝 Tailscale 就一勞永逸 —— 位址永遠不變,按右邊。" = "Installing Tailscale settles it for good — the address never changes. Tap at right.";
 "裝好了,但還沒登入 —— 手機上會是鎖著的。按右邊登入,授權頁會自己開。" = "Installed but not signed in — it'll be locked on your phone. Tap on the right and the sign-in page opens itself.";
 "裝好了但沒在跑。按右邊幫你拉起來。" = "Installed but not running. Tap on the right and Pocket will start it.";
 "裝好了但沒登入,想多一個引擎可用就按右邊登入。" = "Installed but not signed in. Tap on the right if you want this engine too.";
@@ -272,11 +276,11 @@
 "讀取用量中…" = "Reading usage…";
 "貼上 BRIDGE_TOKEN" = "Paste BRIDGE_TOKEN";
 "貼上你的 Bridge 金鑰" = "Paste your Bridge key";
-"走「%@」%@ —— 出門在外也連得到。" = "Using %@ %@ — reachable from anywhere.";
+"走「%@」%@ —— 出門在外也連得到,而且這個位址不會變。" = "Via “%@” %@ — reachable when you’re out, and this address won’t change.";
 "這份執行檔沒有版本資訊(開發模式?),略過更新檢查。" = "This build has no version info (development build?) — skipping the update check.";
 "這個版本的 Pocket 找不到要安裝的內容。重新下載一次最新版再試。" = "This copy of Pocket has nothing to install. Download the latest version and try again.";
 "這個版本的 Pocket 沒有內附 bridge,本機也找不到 bridge 原始碼。請照說明取得後再重新檢查。" = "This copy of Pocket has no bundled bridge, and no bridge source was found on this Mac. Follow the guide to get one, then check again.";
-"這台 Mac 會成為你的 Pocket 執行主機。手機當遙控,所有登入與金鑰都留在這台桌機。\n先用 Apple 登入,完成後掃 QR 就能把手機配對上來。" = "This Mac becomes your Pocket host. Your phone is the remote — every sign-in and key stays on this machine.\nSign in with Apple first, then scan the QR to pair your phone.";
+"這台 Mac 會成為你的 Pocket 執行主機。手機當遙控,所有登入與金鑰都留在這台桌機。\n先用 Apple 登入,完成後掃 QR 就能把手機配對上來。" = "This Mac becomes the machine Pocket runs on. Your phone is the remote — every login and key stays here on the desktop.\nSign in with Apple first, then scan the QR code to pair your phone.";
 "這台 Mac 還沒有夠新的 Python(系統內建的那版太舊)。按「說明」照著裝一次,裝好按下面的「重新檢查」。" = "This Mac doesn't have a new enough Python (the built-in one is too old). Tap Help, install it once, then tap Check again below.";
 "這台機器上有別的程式占著 Pocket 要用的位置。Pocket 不會去動它 —— 先把那個程式關掉,再按「重新檢查」。" = "Another program is using the port Pocket needs. Pocket won't touch it — stop that program, then tap Check again.";
 "連接" = "Connect";
