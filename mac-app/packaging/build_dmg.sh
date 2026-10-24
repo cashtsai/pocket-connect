@@ -70,6 +70,16 @@ done
 # 這條 blocked 項目 + 說明連結，而不是無聲失敗。
 BUNDLE_BRIDGE="${BUNDLE_BRIDGE:-0}"
 BRIDGE_SOURCE="${BRIDGE_SOURCE:-$HOME/apps/hermes-openwebui-bridge}"
+# 正式(公證)建置不開 bridge = 乾淨 Mac 裝完就是死路。v0.3、v0.4、v0.9 同一個事故
+# 發生了三次,每次都是「預設值安靜地少一個必要的東西」,靠發版後驗證才抓到。
+# 預設關閉對煙霧測試是對的,對正式發行是陷阱 —— 所以正式發行時把它變成硬錯誤。
+# 真的要出不含 bridge 的公證版(例如只驗簽章流程),明講 ALLOW_NO_BRIDGE=1。
+if [[ "${NOTARIZE:-0}" == "1" && "$BUNDLE_BRIDGE" != "1" && "${ALLOW_NO_BRIDGE:-0}" != "1" ]]; then
+  echo "✗ NOTARIZE=1 但沒開 BUNDLE_BRIDGE=1 —— 這會出一顆沒有 bridge 的正式版。" >&2
+  echo "  正式發行請用:NOTARIZE=1 BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh" >&2
+  echo "  (刻意不含 bridge 才設 ALLOW_NO_BRIDGE=1)" >&2
+  exit 1
+fi
 if [[ "$BUNDLE_BRIDGE" == "1" ]]; then
   if [[ ! -f "$BRIDGE_SOURCE/bridge.py" ]]; then
     echo "✗ BUNDLE_BRIDGE=1 但 $BRIDGE_SOURCE 不像 bridge 原始碼（沒有 bridge.py）" >&2
