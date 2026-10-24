@@ -2,16 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- 本地化(2026-10-18)。開發語言是繁中(key 就是繁中原字串),
-	     en 的表在 Contents/Resources/en.lproj。沒有這兩個鍵,
-	     Bundle 不知道這個 App 有英文版,系統語言是英文時仍會給中文。 -->
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh-Hant</string>
-	<key>CFBundleLocalizations</key>
-	<array>
-		<string>zh-Hant</string>
-		<string>en</string>
-	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Pocket</string>
 	<key>CFBundleExecutable</key>
@@ -20,14 +12,19 @@
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.pocketagent.desktop</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>zh-Hant</string>
+		<string>en</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>Pocket</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.8.0</string>
+	<string>0.9.0</string>
 	<key>CFBundleVersion</key>
-	<string>12</string>
+	<string>13</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>
