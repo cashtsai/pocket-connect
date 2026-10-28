@@ -39,7 +39,7 @@ cp packaging/Info.plist "$APPDIR/Contents/Info.plist"
 #   cp "$(command -v cloudflared)" "$APPDIR/Contents/Resources/cloudflared"
 #   (bridge runtime would be bundled here too — see README "Bundling deps")
 # App icon (denim cowboy-pocket brand icon, pocket_macos_* full-size set from
-# the sun repo, built with iconutil) → bundled into Resources so Finder/Dock show it.
+# the brand repo, built with iconutil) → bundled into Resources so Finder/Dock show it.
 # 本地化資源(2026-10-18)。桌面端在這之前**只有繁中**,而它是必經步驟 ——
 # 英語使用者下載英文 iOS App、被告知要裝桌面端,裝完打開全部是中文。
 # key = 繁中原字串(與 iOS 的 L10n 一致),所以漏譯時自動回退成中文,
