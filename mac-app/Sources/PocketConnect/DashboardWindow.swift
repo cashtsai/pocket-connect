@@ -522,6 +522,7 @@ struct DashboardView: View {
         case "connected":    return L10n.t("隧道已連線")
         case "connecting":   return L10n.t("連線中…")
         case "off":          return L10n.t("已關閉")
+        case "not_configured": return L10n.t("這台 Mac 的 bridge 還沒接上 Pocket ID")
         case "not_enrolled": return L10n.t("這台 Mac 還沒在 Pocket ID 註冊")
         case "no_binary":    return L10n.t("找不到 frpc —— 這個版本沒有帶中繼元件")
         case "claiming":     return L10n.t("申請授權中…")
