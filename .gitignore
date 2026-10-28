@@ -6,3 +6,7 @@ mac-app/.build/
 mac-app/packaging/MenuBarIcon_*backup*.png
 mac-app/packaging/*_v1_with_border_P.png
 __pycache__/
+
+# SwiftPM 在 repo 根也會留一個 .build（從錯的目錄跑 swift build 時）。
+# mac-app/.build/ 已經擋了，但根目錄這顆沒有 —— 2026-10-28 混進過 commit。
+.build/
