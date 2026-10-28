@@ -66,26 +66,26 @@ else
   note "❌" "**沒有內含 bridge** —— 乾淨 Mac 會卡在「找不到 bridge 原始碼」死路"; fail=1
 fi
 
-if [[ -x "$APP/Contents/Resources/cloudflared" ]]; then
-  note "✅" "內含 cloudflared"
-else
-  note "⚠️ " "沒有內含 cloudflared —— 對外通道會整個靜默不啟動"
-fi
-
-# frpc:付費中繼的客戶端。架構要**擋**不是印 —— 只有單一架構的話,另一半使用者
-# 的 bridge 會 spawn 失敗,而那端只記一行 log,使用者看到的是「遠端連線就是不通」,
-# 沒人查得到為什麼。這種「安靜地只對一半的人壞掉」比整個壞掉更難抓。
-FRPC="$APP/Contents/Resources/frpc"
-if [[ -x "$FRPC" ]]; then
-  FRPC_ARCHS="$(lipo -archs "$FRPC" 2>/dev/null || echo unknown)"
-  if [[ "$FRPC_ARCHS" == *x86_64* && "$FRPC_ARCHS" == *arm64* ]]; then
-    note "✅" "內含 frpc(universal:$FRPC_ARCHS)"
-  else
-    note "❌" "frpc 不是 universal($FRPC_ARCHS)—— 另一半使用者的中繼會靜默失敗"; fail=1
+# 打包進去的 helper binary 一律要 universal。少一個架構 = **安靜地只對一半的
+# 使用者壞掉**,而且兩支的失敗都不吭聲:cloudflared 在 TunnelManager.swift 是
+# `catch { process = nil }`,frpc 在 bridge 那端只記一行 log。使用者看到的是
+# 「就是連不上」,沒人查得到為什麼。所以架構是**擋**,不是印出來給人看。
+# 2026-10-28 的 v0.9.1 實測:frpc 是 universal 而 cloudflared 只有 arm64。
+check_universal() {
+  local name="$1" miss="$2" path="$APP/Contents/Resources/$1" archs
+  if [[ ! -x "$path" ]]; then
+    note "⚠️ " "沒有內含 $name —— $miss"
+    return
   fi
-else
-  note "⚠️ " "沒有內含 frpc —— 付費中繼功能會整個靜默不存在"
-fi
+  archs="$(lipo -archs "$path" 2>/dev/null || echo unknown)"
+  if [[ "$archs" == *x86_64* && "$archs" == *arm64* ]]; then
+    note "✅" "內含 $name(universal:$archs)"
+  else
+    note "❌" "$name 不是 universal($archs)—— 另一半使用者會靜默失敗"; fail=1
+  fi
+}
+check_universal cloudflared "免費自動 tunnel 會整個靜默不啟動"
+check_universal frpc "付費中繼功能會整個靜默不存在"
 
 BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 | head -1)
 note "ℹ️ " "架構:$(lipo -archs "$BIN" 2>/dev/null || echo unknown)"

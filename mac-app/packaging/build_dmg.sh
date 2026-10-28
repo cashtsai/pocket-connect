@@ -9,6 +9,22 @@ APP="Pocket"
 VER=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" packaging/Info.plist 2>/dev/null || echo 0.1.0)
 OUT=build
 APPDIR="$OUT/$APP.app"
+
+# ⚠️ 一次只准跑一個。兩個 build 同時跑會互相覆蓋 build/,而且**症狀出現得很晚
+# 又不像併發**:2026-10-28 的實例是第二個 run 在第一個 run 正在公證時重寫了
+# bundle 內容,錯誤訊息是 `cp: cloudflared: Permission denied`(撞到剛簽完變唯讀
+# 的檔),看起來像權限問題。更糟的情況是沒撞上、靜默跑完 —— 覆寫已簽名 bundle
+# 裡的檔案會讓簽章失效,而那要到使用者下載後才會發現。
+# 鎖放 TMPDIR 不放 build/,因為下一行就把 build/ 刪了。
+LOCK="${TMPDIR:-/tmp}/pocket-connect-build_dmg.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  echo "✗ 另一個 build_dmg.sh 正在跑(鎖:$LOCK)"
+  echo "  兩個同時跑會互相覆蓋 build/,產出的簽章可能靜默失效。"
+  echo "  確定沒有其他 build 在跑的話,手動 rmdir 那個目錄再重試。"
+  exit 1
+fi
+trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 echo "▸ swift build (release)"
@@ -49,66 +65,87 @@ cp packaging/pocket-wordmark.png "$APPDIR/Contents/Resources/"
 cp packaging/LuckiestGuy-Regular.ttf "$APPDIR/Contents/Resources/"
 cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null || true
 
-# 免費零設定連線用的 cloudflared（自動臨時 tunnel）。有系統版就打包進去，讓使用者
-# 不用自己裝；TunnelManager.resolveCloudflaredPath() 會優先找這個打包版。-L 跟隨
-# Homebrew 的 symlink 複製真檔。
-# ⚠️ 這是從**開發機的 Homebrew** 抄的，所以架構就是這台機器的架構（Apple Silicon
-# 上多半是 arm64-only）。下面的 frpc 刻意不照抄這個做法，原因見該段註解。
-for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
-  if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
-done
-
-# ── frpc（中繼隧道客戶端）─────────────────────────────────────────────────────
-# 付費中繼走 frp：bridge 當子程序把它帶起來，把本機 8081 打進 pocket-id 授權過
-# 的子網域。伺服器端是 frps，版本必須對得上（協定會隨版本改）。
+# 免費零設定連線用的 cloudflared（自動臨時 tunnel）。打包進去讓使用者不用自己裝；
+# TunnelManager.resolveCloudflaredPath() 會優先找這個打包版。
 #
-# **為什麼不照抄 cloudflared 那套 `cp -L /opt/homebrew/bin/...`**：那是抄開發機
-# 的 binary，在 Apple Silicon 上就是 arm64-only，Intel Mac 使用者會拿到一支跑不
-# 起來的執行檔。而 bridge 那端 spawn 失敗只會記一行 log —— 使用者看到的是
-# 「遠端連線就是不會通」，查不到為什麼。這正是這個專案反覆出現的失敗形態：
-# 預設值安靜地少一個必要的東西，發版後才被真實使用者踩到。
-# 所以這裡**下載雙架構並 lipo 成 universal**，而且 pin 住 sha256。
-FRP_VER="${FRP_VER:-0.61.1}"
-# 上游 frp_sha256_checksums.txt 的值（2026-10-28 核對過）。版本一改這兩行就要跟著
-# 改，對不上寧可中止 —— 隧道客戶端是會拿到使用者 token 的東西，不接受「下載到什麼
-# 就簽什麼」。
-FRP_SHA256_amd64="403a0ee5e92f083a863d984b7af1e9d70ba2aaa28e87f42f1fe085adf76b8491"
-FRP_SHA256_arm64="3e65f13a17a284bd6013e6bb6856bc2720074cea6094cc446c1f4c3932154c2d"
-FRPC_CACHE="${FRPC_CACHE:-$HOME/.cache/pocket-connect/frpc}"
+# ⚠️ 以前是 `cp -L /opt/homebrew/bin/cloudflared` —— 抄**開發機**的 binary，
+# 所以在 Apple Silicon 上產出的是 arm64-only。2026-10-28 實測 v0.9.1 那顆
+# DMG：frpc 是 x86_64+arm64，cloudflared 只有 arm64。Intel Mac 使用者的
+# 免費 tunnel 會**靜默不啟動**（TunnelManager.swift 的 spawn 失敗是
+# `catch { process = nil }`，不吭聲）。改成下載雙架構 lipo，跟 frpc 同一套。
+CF_VER="${CF_VER:-2026.8.3}"
+# ⚠️ cloudflare 的 release **沒有**發布 checksums 檔（frp 有，那邊是跟上游對過的）。
+# 這兩個值是 2026-10-28 下載當下算的，屬於 trust-on-first-use，不是上游背書。
+# 比原本「抄開發機上不知哪來的 binary」強，但換版時要自己重新確認。
+CF_SHA256_amd64="61e1316266a00fd70ce40da011d612badc805367fb65293dd1925f938f704c99"
+CF_SHA256_arm64="40c9144d86df8937c5b43293a1f7d2d2107029aa74725023dd46b1b27154352f"
 
-build_frpc_universal() {
-  local out="$APPDIR/Contents/Resources/frpc"
-  local slices=() arch tgz sha want dir
-  mkdir -p "$FRPC_CACHE"
+# 下載 → 驗 sha256 → 解壓 → lipo 成 universal。frpc 與 cloudflared 共用，
+# 因為「少一個架構 = 安靜地只對一半使用者壞掉」這個病兩邊一模一樣。
+#   $1=名稱  $2=版本  $3=快取目錄  $4=amd64 sha  $5=arm64 sha  $6=URL 樣板
+#   URL 樣板用 %ARCH% 當佔位；解壓後的執行檔路徑用 %DIR% 當佔位。
+build_universal_helper() {
+  local name="$1" ver="$2" cache="$3" sha_amd="$4" sha_arm="$5" url_tpl="$6" inner="$7"
+  local out="$APPDIR/Contents/Resources/$name"
+  local slices=() arch tgz sha want dir url bin
+  # ⚠️ 佔位符放在**變數**裡再拿來當 pattern。這支是 #!/bin/zsh，而 zsh 的
+  # `${var//%ARCH%/x}` **不會替換**（bash 會）—— 字面 `%` 開頭的 pattern 在
+  # zsh 底下要轉義才認得。2026-10-28 第一版就是這樣把 `%ARCH%` 原封不動送進
+  # URL，GitHub 回 400。用變數當 pattern 在 bash/zsh 行為一致，不必靠轉義。
+  local PH_ARCH='%ARCH%' PH_DIR='%DIR%'
+  mkdir -p "$cache"
   for arch in amd64 arm64; do
-    tgz="$FRPC_CACHE/frp_${FRP_VER}_darwin_${arch}.tar.gz"
-    eval "want=\$FRP_SHA256_${arch}"
+    tgz="$cache/${name}_${ver}_darwin_${arch}.tgz"
+    [[ "$arch" == amd64 ]] && want="$sha_amd" || want="$sha_arm"
+    url="${url_tpl//$PH_ARCH/$arch}"
     if [[ ! -f "$tgz" ]]; then
-      echo "  下載 frp ${FRP_VER} darwin/${arch}"
-      curl -fsSL --retry 3 -o "$tgz" \
-        "https://github.com/fatedier/frp/releases/download/v${FRP_VER}/frp_${FRP_VER}_darwin_${arch}.tar.gz" \
-        || { echo "✗ frpc 下載失敗（${arch}）"; return 1; }
+      echo "  下載 $name $ver darwin/$arch"
+      curl -fsSL --retry 3 -o "$tgz" "$url" || { echo "✗ $name 下載失敗（$arch）"; return 1; }
     fi
     sha="$(shasum -a 256 "$tgz" | awk '{print $1}')"
     if [[ "$sha" != "$want" ]]; then
-      echo "✗ frpc ${arch} sha256 不符"
+      echo "✗ $name $arch sha256 不符"
       echo "    期待 $want"
       echo "    實得 $sha"
       rm -f "$tgz"        # 不留毒快取，下次重下
       return 1
     fi
-    dir="$FRPC_CACHE/x_${arch}"
+    dir="$cache/x_${name}_${arch}"
     rm -rf "$dir"; mkdir -p "$dir"
-    tar -xzf "$tgz" -C "$dir" --strip-components=1 || return 1
-    [[ -f "$dir/frpc" ]] || { echo "✗ frpc ${arch} 壓縮檔裡沒有 frpc"; return 1; }
-    slices+=("$dir/frpc")
+    tar -xzf "$tgz" -C "$dir" || return 1
+    bin="${inner//$PH_DIR/$dir}"; bin="${bin//$PH_ARCH/$arch}"
+    [[ -f "$bin" ]] || { echo "✗ $name $arch 壓縮檔裡找不到 $bin"; return 1; }
+    slices+=("$bin")
   done
   lipo -create -output "$out" "${slices[@]}" || return 1
   chmod 0755 "$out"
-  echo "  frpc universal: $(lipo -archs "$out")"
+  echo "  $name universal: $(lipo -archs "$out")"
 }
 
-if ! build_frpc_universal; then
+if ! build_universal_helper cloudflared "$CF_VER" \
+      "${CF_CACHE:-$HOME/.cache/pocket-connect/cloudflared}" \
+      "$CF_SHA256_amd64" "$CF_SHA256_arm64" \
+      "https://github.com/cloudflare/cloudflared/releases/download/${CF_VER}/cloudflared-darwin-%ARCH%.tgz" \
+      "%DIR%/cloudflared"; then
+  echo "✗ 無法準備 cloudflared，中止（要跳過請設 ALLOW_NO_CLOUDFLARED=1）"
+  [[ "${ALLOW_NO_CLOUDFLARED:-0}" == "1" ]] || exit 1
+  echo "⚠️  ALLOW_NO_CLOUDFLARED=1：這顆建置**不含免費自動 tunnel**"
+fi
+
+# ── frpc（中繼隧道客戶端）─────────────────────────────────────────────────────
+# 付費中繼走 frp：bridge 當子程序把它帶起來，把本機 8081 打進 pocket-id 授權過
+# 的子網域。伺服器端是 frps，版本必須對得上（協定會隨版本改）。
+FRP_VER="${FRP_VER:-0.61.1}"
+# 這兩個值跟上游的 frp_sha256_checksums.txt 核對過（2026-10-28）——
+# 跟 cloudflared 不同，frp 有發布 checksums 檔，所以這裡是上游背書而非 TOFU。
+FRP_SHA256_amd64="403a0ee5e92f083a863d984b7af1e9d70ba2aaa28e87f42f1fe085adf76b8491"
+FRP_SHA256_arm64="3e65f13a17a284bd6013e6bb6856bc2720074cea6094cc446c1f4c3932154c2d"
+
+if ! build_universal_helper frpc "$FRP_VER" \
+      "${FRPC_CACHE:-$HOME/.cache/pocket-connect/frpc}" \
+      "$FRP_SHA256_amd64" "$FRP_SHA256_arm64" \
+      "https://github.com/fatedier/frp/releases/download/v${FRP_VER}/frp_${FRP_VER}_darwin_%ARCH%.tar.gz" \
+      "%DIR%/frp_${FRP_VER}_darwin_%ARCH%/frpc"; then
   # 中止而不是略過：略過的話會發出一顆「看起來正常、但中繼功能安靜地不存在」
   # 的正式版 —— 跟 v0.3/v0.4/v0.9 那三次沒帶 bridge 的事故同一個病。
   echo "✗ 無法準備 frpc，中止（要跳過請設 ALLOW_NO_FRPC=1）"
