@@ -80,6 +80,12 @@ final class DashboardViewModel: ObservableObject {
     @Published var isTesting = false
     @Published var testResult: String?
     @Published var tokenField = ""
+    // 中繼隧道（遠端連線）。relayStatus 是 bridge 回報的**現實**，relayBusy 是
+    // 「按下去了、但 supervisor 最多 30 秒後才會動」的過渡 —— 兩個分開存，
+    // 才不會在使用者按下開關的瞬間就謊稱已經連上。
+    @Published var relayStatus: BridgeClient.RelayStatus?
+    @Published var relayError: String?
+    @Published var relayBusy = false
     @Published var devices: [BridgeClient.PairedDevice] = []
     @Published var isLoadingDevices = false
     @Published var devicesError: String?
@@ -127,6 +133,7 @@ final class DashboardViewModel: ObservableObject {
             self?.isRefreshing = false
         }
         loadDevices()
+        loadRelayStatus()
         agents.refreshAll()
         environment.refresh()
         loadUsage()
@@ -171,6 +178,42 @@ final class DashboardViewModel: ObservableObject {
 
     func revoke(_ id: String) {
         appDelegate?.bridge.revoke(id: id) { [weak self] _ in self?.loadDevices() }
+    }
+
+    func loadRelayStatus() {
+        guard let appDelegate else { return }
+        appDelegate.bridge.fetchRelayStatus { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let s):
+                self.relayStatus = s
+                self.relayError = nil
+                // supervisor 追上意圖了就收掉過渡態。
+                if s.enabled == (s.state != "off") { self.relayBusy = false }
+            case .failure(let error):
+                // 保留上一份快照：連不到 bridge 不代表隧道斷了，把燈改成紅的
+                // 反而是另一種謊。只標記錯誤，讓 UI 說「狀態不明」。
+                self.relayError = error.localizedDescription
+            }
+        }
+    }
+
+    func setRelay(_ enabled: Bool) {
+        guard let appDelegate else { return }
+        relayBusy = true
+        relayError = nil
+        appDelegate.bridge.setRelayEnabled(enabled) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let s):
+                self.relayStatus = s
+            case .failure(let error):
+                self.relayBusy = false
+                self.relayError = error.localizedDescription
+            }
+            // 不管成敗都回頭問一次真實狀態 —— enable 的回應只是「旗標寫好了」。
+            self.loadRelayStatus()
+        }
     }
 
     /// 登出並重新設定（清除登入 + 重跑首次設定）。
@@ -349,6 +392,9 @@ struct DashboardView: View {
                     card { EnvironmentSetupView(model: model.environment) }
                     card { AgentEnginesSection(model: model.agents) }
                     card { usageSection }
+                    // 遠端連線排在「連線設定」前面：它是會改變這台機器對外曝光
+                    // 程度的開關，不該被埋在進階設定的 TextField 底下。
+                    card { relaySection }
                     card { connectionSettingsSection }
                     card { devicesSection }
                 }
@@ -458,6 +504,82 @@ struct DashboardView: View {
     }
 
     // MARK: 連線設定（進階）
+
+    // MARK: 遠端連線（中繼隧道）
+    //
+    // 這個開關的語意是「我把自家 Mac 的 bridge 端到公網上」。所以這裡刻意做三件事：
+    //  1. 開關只表達**意圖**，燈號另外畫 bridge 回報的**現實** —— 兩者會不一致
+    //     （沒訂閱 / token 被撤 / frpc 不在），而那個落差正是使用者要看到的。
+    //  2. 開著的時候講清楚「現在誰連得到」，不要只給一個綠點。
+    //  3. 關掉會失去什麼要寫出來，否則使用者不敢關，等於沒有開關。
+
+    private var relayStateText: String {
+        guard let s = model.relayStatus else {
+            return model.relayError == nil ? L10n.t("讀取中…") : L10n.t("狀態不明")
+        }
+        if model.relayBusy { return L10n.t("切換中…") }
+        switch s.state {
+        case "connected":    return L10n.t("隧道已連線")
+        case "connecting":   return L10n.t("連線中…")
+        case "off":          return L10n.t("已關閉")
+        case "not_enrolled": return L10n.t("這台 Mac 還沒在 Pocket ID 註冊")
+        case "no_binary":    return L10n.t("找不到 frpc —— 這個版本沒有帶中繼元件")
+        case "claiming":     return L10n.t("申請授權中…")
+        case "unentitled":   return L10n.t("中繼需要訂閱（免費替代：你自己的 Tailscale）")
+        case "rejected":     return L10n.t("伺服器拒絕了這條隧道")
+        default:             return L10n.t("無法連線")
+        }
+    }
+
+    private var relayDotColor: Color {
+        guard let s = model.relayStatus, model.relayError == nil else { return .secondary }
+        if model.relayBusy || s.state == "connecting" || s.state == "claiming" { return .orange }
+        if s.isLive { return Brand.green }
+        // 使用者要了卻沒成真 = 紅；本來就關著 = 灰（關著不是故障）。
+        return s.enabled ? Brand.red : .secondary
+    }
+
+    private var relaySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle(L10n.t("遠端連線"))
+            Toggle(isOn: Binding(
+                get: { model.relayStatus?.enabled ?? false },
+                set: { model.setRelay($0) }
+            )) {
+                Text(L10n.t("讓這台 Mac 從外網也連得到（透過 Pocket 中繼）"))
+            }
+            .toggleStyle(.switch)
+            .disabled(model.relayBusy || model.relayStatus == nil)
+
+            HStack(spacing: 6) {
+                Circle().fill(relayDotColor).frame(width: 7, height: 7)
+                Text(relayStateText).font(.caption).foregroundStyle(.secondary)
+                if model.relayBusy { ProgressView().controlSize(.small) }
+            }
+
+            // 連上了才給網址，而且要能複製 —— 不然使用者得自己抄一串亂碼。
+            if let host = model.relayStatus?.hostname, model.relayStatus?.isLive == true {
+                HStack(spacing: 6) {
+                    Text(host).font(.caption.monospaced()).textSelection(.enabled)
+                    Button(L10n.t("複製")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString("https://" + host, forType: .string)
+                    }.buttonStyle(.link).controlSize(.small)
+                }
+            }
+
+            // 卡住的原因要講出來。只顯示一個紅點等於叫使用者去猜。
+            if let s = model.relayStatus, s.isStalled, let detail = s.detail, !detail.isEmpty {
+                Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+            }
+            if let err = model.relayError {
+                Text(err).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
+
+            Text(L10n.t("關閉後，只有同一個網路或你的 Tailscale 連得到這台 Mac。"))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
 
     private var connectionSettingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {

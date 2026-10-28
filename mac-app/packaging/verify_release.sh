@@ -72,6 +72,21 @@ else
   note "⚠️ " "沒有內含 cloudflared —— 對外通道會整個靜默不啟動"
 fi
 
+# frpc:付費中繼的客戶端。架構要**擋**不是印 —— 只有單一架構的話,另一半使用者
+# 的 bridge 會 spawn 失敗,而那端只記一行 log,使用者看到的是「遠端連線就是不通」,
+# 沒人查得到為什麼。這種「安靜地只對一半的人壞掉」比整個壞掉更難抓。
+FRPC="$APP/Contents/Resources/frpc"
+if [[ -x "$FRPC" ]]; then
+  FRPC_ARCHS="$(lipo -archs "$FRPC" 2>/dev/null || echo unknown)"
+  if [[ "$FRPC_ARCHS" == *x86_64* && "$FRPC_ARCHS" == *arm64* ]]; then
+    note "✅" "內含 frpc(universal:$FRPC_ARCHS)"
+  else
+    note "❌" "frpc 不是 universal($FRPC_ARCHS)—— 另一半使用者的中繼會靜默失敗"; fail=1
+  fi
+else
+  note "⚠️ " "沒有內含 frpc —— 付費中繼功能會整個靜默不存在"
+fi
+
 BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 | head -1)
 note "ℹ️ " "架構:$(lipo -archs "$BIN" 2>/dev/null || echo unknown)"
 echo
