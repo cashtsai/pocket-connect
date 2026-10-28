@@ -51,10 +51,70 @@ cp packaging/LICENSE-LuckiestGuy.txt "$APPDIR/Contents/Resources/" 2>/dev/null |
 
 # 免費零設定連線用的 cloudflared（自動臨時 tunnel）。有系統版就打包進去，讓使用者
 # 不用自己裝；TunnelManager.resolveCloudflaredPath() 會優先找這個打包版。-L 跟隨
-# Homebrew 的 symlink 複製真檔。codesign --deep 會一併簽它。
+# Homebrew 的 symlink 複製真檔。
+# ⚠️ 這是從**開發機的 Homebrew** 抄的，所以架構就是這台機器的架構（Apple Silicon
+# 上多半是 arm64-only）。下面的 frpc 刻意不照抄這個做法，原因見該段註解。
 for cf in /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared; do
   if [[ -x "$cf" ]]; then cp -L "$cf" "$APPDIR/Contents/Resources/cloudflared"; break; fi
 done
+
+# ── frpc（中繼隧道客戶端）─────────────────────────────────────────────────────
+# 付費中繼走 frp：bridge 當子程序把它帶起來，把本機 8081 打進 pocket-id 授權過
+# 的子網域。伺服器端是 frps，版本必須對得上（協定會隨版本改）。
+#
+# **為什麼不照抄 cloudflared 那套 `cp -L /opt/homebrew/bin/...`**：那是抄開發機
+# 的 binary，在 Apple Silicon 上就是 arm64-only，Intel Mac 使用者會拿到一支跑不
+# 起來的執行檔。而 bridge 那端 spawn 失敗只會記一行 log —— 使用者看到的是
+# 「遠端連線就是不會通」，查不到為什麼。這正是這個專案反覆出現的失敗形態：
+# 預設值安靜地少一個必要的東西，發版後才被真實使用者踩到。
+# 所以這裡**下載雙架構並 lipo 成 universal**，而且 pin 住 sha256。
+FRP_VER="${FRP_VER:-0.61.1}"
+# 上游 frp_sha256_checksums.txt 的值（2026-10-28 核對過）。版本一改這兩行就要跟著
+# 改，對不上寧可中止 —— 隧道客戶端是會拿到使用者 token 的東西，不接受「下載到什麼
+# 就簽什麼」。
+FRP_SHA256_amd64="403a0ee5e92f083a863d984b7af1e9d70ba2aaa28e87f42f1fe085adf76b8491"
+FRP_SHA256_arm64="3e65f13a17a284bd6013e6bb6856bc2720074cea6094cc446c1f4c3932154c2d"
+FRPC_CACHE="${FRPC_CACHE:-$HOME/.cache/pocket-connect/frpc}"
+
+build_frpc_universal() {
+  local out="$APPDIR/Contents/Resources/frpc"
+  local slices=() arch tgz sha want dir
+  mkdir -p "$FRPC_CACHE"
+  for arch in amd64 arm64; do
+    tgz="$FRPC_CACHE/frp_${FRP_VER}_darwin_${arch}.tar.gz"
+    eval "want=\$FRP_SHA256_${arch}"
+    if [[ ! -f "$tgz" ]]; then
+      echo "  下載 frp ${FRP_VER} darwin/${arch}"
+      curl -fsSL --retry 3 -o "$tgz" \
+        "https://github.com/fatedier/frp/releases/download/v${FRP_VER}/frp_${FRP_VER}_darwin_${arch}.tar.gz" \
+        || { echo "✗ frpc 下載失敗（${arch}）"; return 1; }
+    fi
+    sha="$(shasum -a 256 "$tgz" | awk '{print $1}')"
+    if [[ "$sha" != "$want" ]]; then
+      echo "✗ frpc ${arch} sha256 不符"
+      echo "    期待 $want"
+      echo "    實得 $sha"
+      rm -f "$tgz"        # 不留毒快取，下次重下
+      return 1
+    fi
+    dir="$FRPC_CACHE/x_${arch}"
+    rm -rf "$dir"; mkdir -p "$dir"
+    tar -xzf "$tgz" -C "$dir" --strip-components=1 || return 1
+    [[ -f "$dir/frpc" ]] || { echo "✗ frpc ${arch} 壓縮檔裡沒有 frpc"; return 1; }
+    slices+=("$dir/frpc")
+  done
+  lipo -create -output "$out" "${slices[@]}" || return 1
+  chmod 0755 "$out"
+  echo "  frpc universal: $(lipo -archs "$out")"
+}
+
+if ! build_frpc_universal; then
+  # 中止而不是略過：略過的話會發出一顆「看起來正常、但中繼功能安靜地不存在」
+  # 的正式版 —— 跟 v0.3/v0.4/v0.9 那三次沒帶 bridge 的事故同一個病。
+  echo "✗ 無法準備 frpc，中止（要跳過請設 ALLOW_NO_FRPC=1）"
+  [[ "${ALLOW_NO_FRPC:-0}" == "1" ]] || exit 1
+  echo "⚠️  ALLOW_NO_FRPC=1：這顆建置**不含中繼功能**"
+fi
 
 # ── Bridge payload（M3：全新 Mac 的一鍵安裝）──────────────────────────────────
 # 預設**關閉**。開啟後會把 bridge 原始碼放進 Resources/bridge，App 首次啟動偵測到
@@ -309,13 +369,21 @@ fi
 CODESIGN_OPTS=(--force --generate-entitlement-der)
 [[ "$NOTARIZE" == "1" ]] && CODESIGN_OPTS+=(--options runtime --timestamp)
 
-if [[ -x "$APPDIR/Contents/Resources/cloudflared" ]]; then
-  echo "▸ codesign helper cloudflared"
-  # Must use the same CODESIGN_OPTS as the main app (incl. --options runtime on
-  # the notarize path) — notarytool rejects the whole archive if ANY embedded
-  # executable lacks the hardened runtime, even if the app itself has it.
-  codesign "${CODESIGN_OPTS[@]}" --sign "$SIGN_IDENTITY" "$APPDIR/Contents/Resources/cloudflared"
-fi
+# Must use the same CODESIGN_OPTS as the main app (incl. --options runtime on
+# the notarize path) — notarytool rejects the whole archive if ANY embedded
+# executable lacks the hardened runtime, even if the app itself has it.
+#
+# 這裡**掃出來簽**而不是逐個檔名寫死。原本是 `if [[ -x .../cloudflared ]]` 一塊，
+# 加 frpc 時就得再複製一塊 —— 而主 app 的 codesign 沒有 --deep（下面那行
+# `--verify --deep --strict` 只驗不補簽），所以任何一支漏簽的巢狀執行檔都會在
+# 公證階段整包被退，而且是跑完整個建置之後才爆。掃描讓「之後再加一支 binary」
+# 不需要記得改這裡。
+# 只簽 Mach-O —— 公證在意的是執行檔，不是剛好有 +x 的文字檔。
+while IFS= read -r helper; do
+  file -b "$helper" | grep -q 'Mach-O' || continue
+  echo "▸ codesign helper $(basename "$helper")"
+  codesign "${CODESIGN_OPTS[@]}" --sign "$SIGN_IDENTITY" "$helper"
+done < <(find "$APPDIR/Contents/Resources" -maxdepth 1 -type f -perm -111 -print)
 
 if [[ "$NOTARIZE" == "1" ]]; then
   echo "▸ codesign (identity: $SIGN_IDENTITY, hardened runtime)"
