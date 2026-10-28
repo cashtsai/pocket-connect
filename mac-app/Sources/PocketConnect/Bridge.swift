@@ -314,6 +314,93 @@ final class BridgeClient {
         }.resume()
     }
 
+    // MARK: - 中繼隧道 (owner token only)
+
+    /// 中繼隧道現況。
+    ///
+    /// `enabled` 是**使用者的意圖**(旗標檔),`state` 是**隧道的現實**。
+    /// 兩者會不一致 —— 按了開但沒訂閱、token 被撤、frpc 不在,隧道就是不通。
+    /// UI 必須分開呈現,不可以拿開關的位置當狀態燈,那是在騙人。
+    struct RelayStatus {
+        let enabled: Bool
+        let state: String          // off / not_enrolled / no_binary / claiming
+                                   // / connecting / connected / rejected
+                                   // / unentitled / error
+        let hostname: String?
+        let detail: String?
+        let frpcPresent: Bool
+
+        /// 只有這個狀態代表「外面真的連得進來」。
+        var isLive: Bool { state == "connected" }
+        /// 使用者要了,但沒成真 —— 這個組合要在 UI 上講出原因。
+        var isStalled: Bool { enabled && !isLive && state != "connecting" }
+    }
+
+    private func parseRelayStatus(_ json: [String: Any]?) -> RelayStatus {
+        RelayStatus(
+            enabled: (json?["enabled"] as? Bool) ?? false,
+            state: (json?["state"] as? String) ?? "error",
+            hostname: json?["hostname"] as? String,
+            detail: json?["detail"] as? String,
+            frpcPresent: (json?["frpc_present"] as? Bool) ?? false)
+    }
+
+    /// GET /app/v1/relay/status
+    func fetchRelayStatus(completion: @escaping (Result<RelayStatus, Error>) -> Void) {
+        func done(_ r: Result<RelayStatus, Error>) { DispatchQueue.main.async { completion(r) } }
+        guard let token = BridgeToken.read() else {
+            return done(.failure(BridgeError(message: L10n.t("找不到 BRIDGE_TOKEN"))))
+        }
+        guard let url = URL(string: baseURL + "/app/v1/relay/status") else {
+            return done(.failure(BridgeError(message: L10n.t("無效的網址"))))
+        }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("PocketConnect/1.0", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err { return done(.failure(err)) }
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                // 404 = bridge 還是舊版,沒這條路由。這不是錯誤,是「功能還沒到」。
+                if code == 404 {
+                    return done(.failure(BridgeError(message: L10n.t("這個 bridge 版本還沒有中繼功能"))))
+                }
+                return done(.failure(BridgeError(message: (json?["detail"] as? String) ?? "HTTP \(code)")))
+            }
+            done(.success(self.parseRelayStatus(json)))
+        }.resume()
+    }
+
+    /// POST /app/v1/relay/enable — 開/關隧道。
+    ///
+    /// 回傳的是**按下去當下**的狀態:supervisor 最多 30 秒後才會真的動,
+    /// 所以 `state` 還會是上一輪的值。UI 要顯示「切換中」,不要假裝已經生效。
+    func setRelayEnabled(_ enabled: Bool,
+                         completion: @escaping (Result<RelayStatus, Error>) -> Void) {
+        func done(_ r: Result<RelayStatus, Error>) { DispatchQueue.main.async { completion(r) } }
+        guard let token = BridgeToken.read() else {
+            return done(.failure(BridgeError(message: L10n.t("找不到 BRIDGE_TOKEN"))))
+        }
+        guard let url = URL(string: baseURL + "/app/v1/relay/enable") else {
+            return done(.failure(BridgeError(message: L10n.t("無效的網址"))))
+        }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": enabled])
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err { return done(.failure(err)) }
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return done(.failure(BridgeError(message: (json?["detail"] as? String)
+                                                 ?? L10n.t("切換失敗"))))
+            }
+            done(.success(self.parseRelayStatus(json)))
+        }.resume()
+    }
+
     // MARK: - AI 用量 (bridge token only, no account session)
 
     /// GET /app/v1/usage — Codex/Claude 本機額度快照。bridge 端自帶 10 秒
