@@ -27,9 +27,23 @@ trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 
-echo "▸ swift build (release)"
-swift build -c release
-BIN=$(swift build -c release --show-bin-path)/PocketConnect
+# ⚠️ `--arch` 兩個都要給,否則 SwiftPM 只建**本機**架構 —— 在 Apple Silicon 上
+# 產出 arm64-only,Intel Mac 連 app 都開不起來。
+# 2026-10-29 發現:v0.9.2 把 cloudflared/frpc 都 lipo 成 universal 了,理由寫的是
+# 「Intel Mac 使用者的免費 tunnel 會靜默不啟動」—— 但主程式自己是 arm64-only,
+# Intel 使用者根本走不到那一步,那個修正等於空轉。要嘛整包 universal,要嘛別宣稱
+# 支援 Intel;兩個架構分開對待是自相矛盾的。
+SWIFT_ARCHS=(--arch x86_64 --arch arm64)
+echo "▸ swift build (release, universal)"
+swift build -c release "${SWIFT_ARCHS[@]}"
+BIN=$(swift build -c release "${SWIFT_ARCHS[@]}" --show-bin-path)/PocketConnect
+# 真的是兩個架構才繼續 —— `swift build` 對不支援的 --arch 組合可能退回單架構
+# 而**不是**報錯,靜默產出 arm64-only 再簽名公證,下游完全看不出來。
+_archs=$(lipo -archs "$BIN" 2>/dev/null || echo "")
+case "$_archs" in
+  *x86_64*arm64*|*arm64*x86_64*) echo "  PocketConnect universal: $_archs" ;;
+  *) echo "✗ 主程式不是 universal(實際:${_archs:-讀不到})—— 中止,不要出一包宣稱支援 Intel 卻開不了的"; exit 1 ;;
+esac
 
 echo "▸ assemble $APP.app"
 mkdir -p "$APPDIR/Contents/MacOS" "$APPDIR/Contents/Resources"
