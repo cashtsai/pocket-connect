@@ -329,11 +329,39 @@ final class BridgeClient {
         let hostname: String?
         let detail: String?
         let frpcPresent: Bool
+        /// Tailscale 那條（免費層）。與中繼**並存**，不是二選一。
+        let tailscale: TailscaleExpose
 
         /// 只有這個狀態代表「外面真的連得進來」。
         var isLive: Bool { state == "connected" }
         /// 使用者要了,但沒成真 —— 這個組合要在 UI 上講出原因。
         var isStalled: Bool { enabled && !isLive && state != "connecting" }
+    }
+
+    /// 這台 Mac 經由 Tailscale 對外的現況。
+    ///
+    /// ⚠️ `serve` 與 `funnel` **共用同一個網址** `https://<machine>.<tailnet>.ts.net`
+    /// —— 光看網址分不出「只有我的 tailnet 連得到」還是「全世界連得到」。
+    /// 所以曝光範圍一定要讀 `mode`，絕不可以從 hostname 推論。
+    struct TailscaleExpose {
+        let installed: Bool
+        let loggedIn: Bool
+        let mode: String        // off / serve / funnel
+        let hostname: String?
+
+        /// 同 tailnet 的裝置連得到（手機也要在 tailnet）。
+        var isPrivateReachable: Bool { mode == "serve" || mode == "funnel" }
+        /// 公網任何人都連得到 —— 只剩 BRIDGE_TOKEN 一道閘。
+        var isPubliclyExposed: Bool { mode == "funnel" }
+    }
+
+    private func parseTailscale(_ j: [String: Any]?) -> TailscaleExpose {
+        // 舊版 bridge 不回這個欄位 → 一律當成「沒有」，不要猜成已啟用。
+        TailscaleExpose(
+            installed: (j?["installed"] as? Bool) ?? false,
+            loggedIn: (j?["logged_in"] as? Bool) ?? false,
+            mode: (j?["mode"] as? String) ?? "off",
+            hostname: j?["hostname"] as? String)
     }
 
     private func parseRelayStatus(_ json: [String: Any]?) -> RelayStatus {
@@ -342,7 +370,8 @@ final class BridgeClient {
             state: (json?["state"] as? String) ?? "error",
             hostname: json?["hostname"] as? String,
             detail: json?["detail"] as? String,
-            frpcPresent: (json?["frpc_present"] as? Bool) ?? false)
+            frpcPresent: (json?["frpc_present"] as? Bool) ?? false,
+            tailscale: parseTailscale(json?["tailscale"] as? [String: Any]))
     }
 
     /// GET /app/v1/relay/status
