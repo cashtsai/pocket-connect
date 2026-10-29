@@ -540,9 +540,49 @@ struct DashboardView: View {
         return s.enabled ? Brand.red : .secondary
     }
 
+    /// 免費層：Tailscale。與中繼**並存**，不是二選一 —— 使用者可以只用這條、
+    /// 只用中繼、或兩條都開（候選清單會優先走比較快的那條）。
+    @ViewBuilder
+    private var tailscaleRow: some View {
+        if let ts = model.relayStatus?.tailscale {
+            let dot: Color = ts.isPrivateReachable ? Brand.green
+                : (ts.installed && ts.loggedIn ? .orange : .secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle().fill(dot).frame(width: 7, height: 7)
+                    Text(L10n.t("Tailscale（免費）")).font(.caption.weight(.medium))
+                    Text(tailscaleStateText).font(.caption).foregroundStyle(.secondary)
+                }
+                if let h = ts.hostname, ts.isPrivateReachable {
+                    HStack(spacing: 6) {
+                        Text(h).font(.caption2.monospaced()).textSelection(.enabled)
+                        // ⚠️ serve 與 funnel 是同一個網址，曝光範圍只能看 mode。
+                        Text(ts.isPubliclyExposed ? L10n.t("· 公開（任何人）")
+                                                  : L10n.t("· 僅限你的 Tailscale 裝置"))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var tailscaleStateText: String {
+        guard let ts = model.relayStatus?.tailscale else { return "" }
+        if !ts.installed { return L10n.t("未安裝") }
+        if !ts.loggedIn { return L10n.t("未登入") }
+        switch ts.mode {
+        case "funnel": return L10n.t("已開啟公網 Funnel")
+        case "serve":  return L10n.t("已開啟，手機需在同一個 Tailscale")
+        default:       return L10n.t("已登入但未對外開放（重跑安裝器可啟用）")
+        }
+    }
+
     private var relaySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle(L10n.t("遠端連線"))
+            tailscaleRow
+            Divider().padding(.vertical, 2)
+            Text(L10n.t("Pocket 中繼（訂閱）")).font(.caption.weight(.medium))
             Toggle(isOn: Binding(
                 get: { model.relayStatus?.enabled ?? false },
                 set: { model.setRelay($0) }
