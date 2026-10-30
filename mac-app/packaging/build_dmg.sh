@@ -264,6 +264,43 @@ if [[ "$BUNDLE_BRIDGE" == "1" ]]; then
     echo "✗ bridge payload 裡疑似有真 token(上列檔案),中止打包" >&2
     exit 1
   fi
+  # ── 記錄打包進去的是哪一版 bridge(2026-10-31)────────────────────
+  #
+  # 在這之前**完全沒有記錄**:DMG 出門之後,沒有任何人(包括我們自己)能判斷
+  # 某一顆裡裝的是哪一版 bridge。2026-10-31 盤查官網/DMG/iOS build 三方是否
+  # 對齊時,只能靠「本機 build 目錄的 mtime」去猜 —— 那不是查證,是推論。
+  #
+  # 為什麼這件事會變貴:bridge 與 iOS app 是**有協定相依**的。付費中繼那批
+  # 需要 bridge 的 `/app/v1/relay/enroll`;使用者手上的 DMG 若是舊的,
+  # 付款流程會在綁主機那一步 404,而 app 端刻意 fail-safe **不顯示任何錯誤**。
+  # 也就是「付了錢沒東西用,而且沒有錯誤訊息」—— 最難被回報的那種壞法。
+  # 有了這個檔,事後至少查得出來是哪一顆的問題。
+  BRIDGE_GIT_SHA=$(git -C "$BRIDGE_SOURCE" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  BRIDGE_GIT_DATE=$(git -C "$BRIDGE_SOURCE" log -1 --format=%cI 2>/dev/null || echo unknown)
+  BRIDGE_DIRTY=no
+  [ -n "$(git -C "$BRIDGE_SOURCE" status --porcelain 2>/dev/null)" ] && BRIDGE_DIRTY=yes
+  cat > "$APPDIR/Contents/Resources/bridge/BRIDGE_VERSION.txt" <<VERSTAMP
+commit=$BRIDGE_GIT_SHA
+commit_date=$BRIDGE_GIT_DATE
+dirty=$BRIDGE_DIRTY
+bundled_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSTAMP
+  echo "  bridge: $BRIDGE_GIT_SHA ($BRIDGE_GIT_DATE) dirty=$BRIDGE_DIRTY"
+
+  # 正式發行時,原始碼不乾淨 = 打包失敗。
+  #
+  # 沿用本檔既有的立場(見上面 NOTARIZE + BUNDLE_BRIDGE 那道守門):
+  # **預設值對煙霧測試是對的,對正式發行是陷阱。** 一顆 dirty 的 payload
+  # 對應不到任何 commit,出事時連「使用者手上是什麼」都重現不了。
+  # 真的要用未提交的改動出正式版,明講 ALLOW_DIRTY_BRIDGE=1。
+  if [[ "${NOTARIZE:-0}" == "1" && "$BRIDGE_DIRTY" == "yes" \
+        && "${ALLOW_DIRTY_BRIDGE:-0}" != "1" ]]; then
+    echo "✗ NOTARIZE=1 但 $BRIDGE_SOURCE 有未提交的改動。" >&2
+    echo "  這顆 DMG 裡的 bridge 對應不到任何 commit,事後無法重現。" >&2
+    echo "  先提交,或明講 ALLOW_DIRTY_BRIDGE=1。" >&2
+    exit 1
+  fi
+
   echo "  payload: $(du -sh "$APPDIR/Contents/Resources/bridge" | cut -f1)"
 fi
 
