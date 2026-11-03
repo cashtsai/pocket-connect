@@ -86,7 +86,7 @@ jobs:
       - name: Checkout bridge (private)
         uses: actions/checkout@v4
         with:
-          repository: cashtsai/hermes-openwebui-bridge
+          repository: cashtsai/hermes-studio-bridge
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge
           fetch-depth: 1
