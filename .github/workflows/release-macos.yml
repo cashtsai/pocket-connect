@@ -91,6 +91,16 @@ jobs:
           path: bridge
           fetch-depth: 1
 
+      - name: Restore sanitize table(私人識別消毒表,不進 repo)
+        env:
+          SANITIZE_TABLE_B64: ${{ secrets.POCKET_SANITIZE_TABLE_B64 }}
+        run: |
+          if [ -z "$SANITIZE_TABLE_B64" ]; then
+            echo "::error::缺 POCKET_SANITIZE_TABLE_B64 secret(見 docs/CI_RELEASE.md)"; exit 1
+          fi
+          printf '%s' "$SANITIZE_TABLE_B64" | base64 -d > "$RUNNER_TEMP/sanitize-table.json"
+          echo "POCKET_SANITIZE_TABLE=$RUNNER_TEMP/sanitize-table.json" >> "$GITHUB_ENV"
+
       - name: Build, sign, notarize, staple (build_dmg.sh CI mode)
         working-directory: mac-app
         env:
