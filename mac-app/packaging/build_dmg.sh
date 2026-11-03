@@ -316,6 +316,65 @@ fi
 #   - NOTARIZE=1 + Developer ID Application → public distribution. The matching
 #     Developer ID profile enables Production CloudKit, but Apple does not allow
 #     the native Sign in with Apple entitlement on Developer ID profiles.
+# ── CI 簽章模式(2026-11-03)──────────────────────────────────────────────────
+# 觸發條件:MACOS_CERTIFICATE_P12_BASE64 有值(GitHub Actions 把 secrets 餵進
+# 環境變數;見 .github/workflows/release-macos.yml 與 docs/CI_RELEASE.md)。
+# 本機發版流程不會設這個變數,所以整塊在本機是死碼 —— 本機行為一字不變,
+# 憑證照舊從登入 keychain 找。
+#
+# 做法抄 t3code(MIT;.github/workflows/release-desktop.yml 的
+# 「Import macOS signing certificate」步驟 + scripts/sign-macos.ts 管線):
+#   ephemeral keychain → 匯入 p12 → set-key-partition-list 讓 codesign 免互動
+#   → 結束時整個 keychain 刪掉,runner 上不留東西。
+# identity 名稱從 keychain 裡挖出來而不是寫死 —— 憑證換發時名稱會變。
+if [[ -n "${MACOS_CERTIFICATE_P12_BASE64:-}" ]]; then
+  : "${MACOS_CERTIFICATE_PASSWORD:?CI 簽章模式需要 MACOS_CERTIFICATE_PASSWORD}"
+  CI_SIGN_TMP="$(mktemp -d)"
+  CI_KEYCHAIN="$CI_SIGN_TMP/pocket-ci-signing.keychain-db"
+  CI_KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+  # keychain 搜尋清單是**持久狀態**,不是行程狀態 —— 先記下原樣,結束時還原,
+  # 不然在開發機上重現 CI 模式會把登入 keychain 從清單裡擠掉。
+  CI_OLD_KEYCHAINS=("${(@f)$(security list-keychains -d user | sed 's/^ *"//; s/"$//')}")
+  CI_OLD_KEYCHAINS=(${CI_OLD_KEYCHAINS:#})   # zsh:空輸出會變一個空元素,濾掉
+  # ⚠️ zsh 的 trap EXIT 會**取代**前面那個(上面清 build 鎖的那個),不是疊加,
+  # 所以鎖的清理要在這裡重寫一次。
+  trap 'security delete-keychain "$CI_KEYCHAIN" >/dev/null 2>&1 || true; { [[ ${#CI_OLD_KEYCHAINS[@]} -gt 0 ]] && security list-keychains -d user -s "${CI_OLD_KEYCHAINS[@]}"; } >/dev/null 2>&1 || true; rm -rf "$CI_SIGN_TMP"; rmdir "$LOCK" 2>/dev/null || true' EXIT
+  echo "▸ CI 簽章模式:匯入憑證到 ephemeral keychain"
+  printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$CI_SIGN_TMP/cert.p12"
+  security create-keychain -p "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN"
+  security set-keychain-settings -lut 21600 "$CI_KEYCHAIN"
+  security unlock-keychain -p "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN"
+  security import "$CI_SIGN_TMP/cert.p12" -k "$CI_KEYCHAIN" \
+    -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+  security set-key-partition-list -S apple-tool:,apple: -s \
+    -k "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN" >/dev/null
+  security list-keychains -d user -s "$CI_KEYCHAIN" "${CI_OLD_KEYCHAINS[@]}"
+  rm -f "$CI_SIGN_TMP/cert.p12"
+  SIGN_IDENTITY="$(security find-identity -v -p codesigning "$CI_KEYCHAIN" \
+    | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
+  if [[ -z "$SIGN_IDENTITY" ]]; then
+    echo "✗ p12 裡找不到 Developer ID Application 身分" >&2
+    exit 1
+  fi
+  echo "  identity: $SIGN_IDENTITY"
+  # Developer ID provisioning profile(base64 → 檔案;下面既有的 profile 守門照常跑)
+  if [[ -n "${DEVELOPER_ID_PROFILE_BASE64:-}" ]]; then
+    DESKTOP_PROFILE="$CI_SIGN_TMP/pocket-desktop-developer-id.provisionprofile"
+    printf '%s' "$DEVELOPER_ID_PROFILE_BASE64" | base64 --decode > "$DESKTOP_PROFILE"
+    chmod 600 "$DESKTOP_PROFILE"
+  fi
+  # notarytool 的 ASC API key(base64 → 檔案;餵給既有的 resolve_notary_auth)
+  if [[ -n "${APPLE_NOTARY_KEY_P8_BASE64:-}" ]]; then
+    : "${APPLE_NOTARY_KEY_ID:?有 APPLE_NOTARY_KEY_P8_BASE64 就要有 APPLE_NOTARY_KEY_ID}"
+    : "${APPLE_NOTARY_ISSUER_ID:?有 APPLE_NOTARY_KEY_P8_BASE64 就要有 APPLE_NOTARY_ISSUER_ID}"
+    ASC_KEY_PATH="$CI_SIGN_TMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+    printf '%s' "$APPLE_NOTARY_KEY_P8_BASE64" | base64 --decode > "$ASC_KEY_PATH"
+    chmod 600 "$ASC_KEY_PATH"
+    ASC_KEY_ID="$APPLE_NOTARY_KEY_ID"
+    ASC_ISSUER_ID="$APPLE_NOTARY_ISSUER_ID"
+  fi
+fi
+
 REQUESTED_SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 REQUESTED_PROFILE="${PROFILE:-}"
 REQUESTED_DESKTOP_PROFILE="${DESKTOP_PROFILE:-}"
@@ -343,7 +402,10 @@ SIGN_IDENTITY="${SIGN_IDENTITY:--}"   # default: ad-hoc "-"
 #   # Path B (fallback): Apple ID + app-specific password
 #   APPLE_ID="you@apple.id"          APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 NOTARIZE="${NOTARIZE:-0}"
-[[ -f "$HOME/.pocket-release.env" ]] && source "$HOME/.pocket-release.env"
+# CI 簽章模式不吃本機的 ~/.pocket-release.env —— runner 上本來就沒有,而在
+# 開發機上重現 CI 模式時,讓它讀進來會把 CI 的 ASC_* 蓋掉,變成「測的是
+# 本機憑證路徑,不是 CI 路徑」。
+[[ -f "$HOME/.pocket-release.env" && -z "${MACOS_CERTIFICATE_P12_BASE64:-}" ]] && source "$HOME/.pocket-release.env"
 OUT="$SCRIPT_OUT"
 APPDIR="$SCRIPT_APPDIR"
 VER="$SCRIPT_VER"
