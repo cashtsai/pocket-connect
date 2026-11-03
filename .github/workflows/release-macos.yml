@@ -1,0 +1,161 @@
+# Release macOS — tag push (v*) → 簽名 + 公證 + staple + 煙霧測試 → Release 資產。
+#
+# 管線做法抄 t3code(MIT;.github/workflows/release-desktop.yml 的憑證匯入與
+# Launch check 思路)。憑證匯入本身住在 mac-app/packaging/build_dmg.sh 的
+# CI 簽章模式裡(MACOS_CERTIFICATE_P12_BASE64 有值才啟動),workflow 只負責
+# 把 secrets 餵成環境變數 —— 所以整條路徑在本機也能重現。
+#
+# ## 為什麼 CI 現在可以碰 release 資產了(翻案紀錄)
+#
+# 舊的 release.yml(已被本檔取代)寫死「CI 永不碰正式 release 資產」,根因是
+# v0.3/v0.4 的空包事故:CI 抓不到私有 bridge repo,建出來的 DMG 沒有內建
+# bridge,乾淨 Mac 裝完是死路,而它跟本機正貨賽跑還搶先掛上 releases。
+# 本檔把那個根因修掉而不是繞開:
+#   1. bridge 用 deploy key checkout —— checkout 失敗 = 整個 job 失敗,
+#      不可能「安靜地建出沒 bridge 的包」。
+#   2. build_dmg.sh 本身就擋:NOTARIZE=1 而沒 BUNDLE_BRIDGE=1 直接報錯。
+#   3. smoke_dmg.sh 用 app 自己的 POCKET_ENV_DOCTOR 行為探針驗「app 找得到
+#      內附 bridge」,空包在發佈前就死在這一步。
+# 需要的 secrets 清單與首次驗證流程見 docs/CI_RELEASE.md。
+#
+# workflow_dispatch 是乾跑道:整條建置+簽名+公證+煙霧都跑,但**不**發佈
+# release 資產(只掛 workflow artifact)。首次驗證 secrets 用這個,不用燒 tag。
+
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pocket-release-macos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # tag 必須恰好等於 Info.plist 的版本 —— 版本號只有一個事實來源。
+      - name: Verify tag matches app version
+        if: github.ref_type == 'tag'
+        working-directory: mac-app
+        run: |
+          APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" packaging/Info.plist)
+          if [ "v${APP_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match Info.plist version ${APP_VERSION}" >&2
+            exit 1
+          fi
+
+      # secrets 先驗再花 20 分鐘建置 —— 缺一個就立刻死,錯誤訊息指名道姓。
+      - name: Preflight secrets
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          DEVELOPER_ID_PROFILE_BASE64: ${{ secrets.DEVELOPER_ID_PROFILE_BASE64 }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          BRIDGE_DEPLOY_KEY: ${{ secrets.BRIDGE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD \
+                      DEVELOPER_ID_PROFILE_BASE64 APPLE_NOTARY_KEY_P8_BASE64 \
+                      APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID BRIDGE_DEPLOY_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::missing secret: $name (setup: docs/CI_RELEASE.md)"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Run Swift tests
+        working-directory: mac-app
+        run: swift test
+
+      # 私有 bridge repo。v0.3/v0.4 空包事故的根因就是 CI 抓不到它 ——
+      # 這裡用 read-only deploy key;抓不到 = job 失敗,絕不帶病前進。
+      - name: Checkout bridge (private)
+        uses: actions/checkout@v4
+        with:
+          repository: cashtsai/hermes-openwebui-bridge
+          ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
+          path: bridge
+          fetch-depth: 1
+
+      - name: Build, sign, notarize, staple (build_dmg.sh CI mode)
+        working-directory: mac-app
+        env:
+          # 有 MACOS_CERTIFICATE_P12_BASE64 → build_dmg.sh 進 CI 簽章模式:
+          # ephemeral keychain、identity 從 p12 挖、profile/p8 從 base64 還原。
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          DEVELOPER_ID_PROFILE_BASE64: ${{ secrets.DEVELOPER_ID_PROFILE_BASE64 }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          NOTARIZE=1 BUNDLE_BRIDGE=1 \
+            BRIDGE_SOURCE="$GITHUB_WORKSPACE/bridge" \
+            ./packaging/build_dmg.sh
+
+      # 煙霧測試驗行為,不驗存活:spctl/stapler/universal/bridge payload +
+      # 真的把 app 跑起來(POCKET_ENV_DOCTOR 乾跑出口)。
+      - name: Smoke test DMG
+        working-directory: mac-app
+        run: |
+          set -euo pipefail
+          DMG=$(find build/dist -maxdepth 1 -name 'Pocket-*.dmg' -print -quit)
+          test -n "$DMG"
+          ./packaging/smoke_dmg.sh "$DMG"
+
+      - name: Locate artifacts
+        id: artifacts
+        working-directory: mac-app
+        run: |
+          set -euo pipefail
+          DMG=$(find build/dist -maxdepth 1 -name 'Pocket-*.dmg' -print -quit)
+          test -n "$DMG"
+          test -f "$DMG.sha256"
+          echo "dmg=mac-app/$DMG" >> "$GITHUB_OUTPUT"
+          echo "checksum=mac-app/$DMG.sha256" >> "$GITHUB_OUTPUT"
+
+      # 不論發不發 release,產物都掛 workflow artifact 供查驗(乾跑道只有這個)。
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocket-dmg-${{ github.ref_name }}
+          path: |
+            ${{ steps.artifacts.outputs.dmg }}
+            ${{ steps.artifacts.outputs.checksum }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # 只有 tag 觸發才發佈。--verify-tag:tag 不在 remote 上就不准建 release。
+      - name: Publish release assets
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: mac-app
+        run: |
+          set -euo pipefail
+          DMG=$(find build/dist -maxdepth 1 -name 'Pocket-*.dmg' -print -quit)
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # release 已存在(例如本機先發了)就只補/覆蓋資產,不動 release 本體。
+            gh release upload "$GITHUB_REF_NAME" "$DMG" "$DMG.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$DMG" "$DMG.sha256" \
+              --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+              --generate-notes --verify-tag
+          fi
+          echo "發佈後記得驗下載回來的那顆:mac-app/packaging/verify_release.sh $GITHUB_REF_NAME"

@@ -4,8 +4,9 @@ set -euo pipefail
 #   1. bump CFBundleShortVersionString (+ CFBundleVersion) in Info.plist
 #   2. build the .dmg locally (sanity check)
 #   3. commit the version bump, tag v<ver>, and push the tag
-# The pushed tag triggers .github/workflows/release.yml which builds + uploads
-# the .dmg as a GitHub Release asset.
+# The pushed tag triggers .github/workflows/release-macos.yml which signs,
+# notarizes, smoke-tests and uploads the .dmg + .sha256 as Release assets.
+# (2026-11-03 起恢復 CI 發佈;空包根因已修 —— 見該 workflow 檔頭的翻案紀錄。)
 #
 # Usage:
 #   ./packaging/cut_release.sh 0.2.0     # explicit version
@@ -68,27 +69,30 @@ else
   echo "✓ 已推送 tag v$new。"
 fi
 
-# ⚠️ 2026-10-21 更正:這裡原本寫「GitHub Actions 會 build 並上傳 .dmg 到
-#    Release」。**那是錯的,而且是會害人的錯。** 2026-10-05 起 CI 永不碰正式
-#    release 的資產(理由見 .github/workflows/release.yml:119 —— v0.3/v0.4 的
-#    「本機正貨 vs CI 空包」賽跑,CI 抓不到私有 bridge repo,它建的 DMG 沒有
-#    內建 bridge,乾淨 Mac 裝完是死路)。
-#
-#    照舊文字做的人會推完 tag 就以為發版完成,**而 Release 上根本沒有資產**。
+# ⚠️ 本段歷史(留著,因為兩個方向的錯都發生過):
+#    · 2026-10-21 之前這裡說「CI 會上傳資產」—— 當時是錯的(2026-10-05 起
+#      CI 永不碰 release 資產:v0.3/v0.4 的「本機正貨 vs CI 空包」賽跑,
+#      CI 抓不到私有 bridge repo,建出的 DMG 沒 bridge,乾淨 Mac 是死路)。
+#    · 2026-11-03 起又是對的:release-macos.yml 用 deploy key checkout
+#      bridge、build_dmg.sh 擋無 bridge 公證版、smoke_dmg.sh 行為探針驗
+#      「app 找得到內附 bridge」,空包三道都過不了。根因修了,不是繞開。
+#      secrets 清單與首次驗證流程見 docs/CI_RELEASE.md。
 cat <<EOT
 
-▸ 還沒發版 —— tag 只是 tag。正式發行是本機建 + 自己上傳:
+▸ tag 已推送 —— CI(release-macos.yml)接手:簽名 + 公證 + 煙霧測試 + 上傳資產。
+
+    盯 run:    gh run watch --repo cashtsai/pocket-connect
+    發佈後驗:  ./packaging/verify_release.sh "v$new"
+
+  驗「使用者真的會下載到的那顆」不是形式:線上的 v0.5.1 實測 stapler validate
+  **沒有票據** —— 公證做了,但上傳的那顆不是 staple 過的那顆。有網路的人不會
+  遇到,所以本機怎麼測都測不出來。驗的對象必須是下載回來的那一顆。
+
+▸ CI 壞掉時的本機後備(⚠️ 跟 CI **不要**同時跑 —— 兩邊都會上傳,就是當年
+  v0.3/v0.4 的賽跑。先到 Actions 取消那個 run 再動手):
 
     NOTARIZE=1 BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh
     gh release create "v$new" "build/dist/Pocket-$new.dmg" \
         "build/dist/Pocket-$new.dmg.sha256" --title "v$new" --generate-notes
-
-▸ 上傳完**一定要驗使用者真的會下載到的那顆**:
-
     ./packaging/verify_release.sh "v$new"
-
-  這一步不是形式:線上的 v0.5.1 實測 stapler validate **沒有票據** ——
-  公證做了,但上傳的那顆不是 staple 過的那顆。有網路的人不會遇到,所以
-  **本機怎麼測都測不出來**,只有離線或公司網路擋 Apple 公證服務的使用者會
-  看到「Apple 無法檢查是否含有惡意軟體」。驗的對象必須是下載回來的那一顆。
 EOT
