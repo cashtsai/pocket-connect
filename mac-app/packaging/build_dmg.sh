@@ -592,14 +592,28 @@ NOTARY_AUTH=()
 # 把 app 放進 DMG 之後才 staple app 沒有用:DMG 裡那份是複本。
 if [[ "$NOTARIZE" == "1" ]]; then
   resolve_notary_auth
-  echo "▸ notarytool submit(app;共兩次公證,這是第一次)"
+  # staple 會打 Apple 的票據服務(api.apple-cloudkit.com),CI runner 上瞬斷
+# 出了名(2026-11-04 乾跑實錄:公證 Accepted 後 staple 吃 -1005 連線中斷,
+# Error 68)。公證已過,票據一定在 —— 失敗幾乎都是網路,重試就好。
+staple_retry() {
+  local target="$1" i
+  for i in 1 2 3 4 5; do
+    if xcrun stapler staple "$target"; then return 0; fi
+    echo "  staple 第 $i 次失敗,${i}5 秒後重試…" >&2
+    sleep $((i * 15))
+  done
+  echo "✗ staple 重試 5 次仍失敗:$target" >&2
+  return 1
+}
+
+echo "▸ notarytool submit(app;共兩次公證,這是第一次)"
   APP_ZIP="$OUT/Pocket-app-notarize.zip"
   rm -f "$APP_ZIP"
   /usr/bin/ditto -c -k --keepParent "$APPDIR" "$APP_ZIP"
   xcrun notarytool submit "$APP_ZIP" "${NOTARY_AUTH[@]}" --wait
   rm -f "$APP_ZIP"
   echo "▸ stapler staple(app)"
-  xcrun stapler staple "$APPDIR"
+  staple_retry "$APPDIR"
   xcrun stapler validate "$APPDIR"
 fi
 
@@ -648,7 +662,7 @@ if [[ "$NOTARIZE" == "1" ]]; then
   echo "▸ notarytool submit（dmg;第二次)"
   xcrun notarytool submit "$DMG" "${NOTARY_AUTH[@]}" --wait
   echo "▸ stapler staple"
-  xcrun stapler staple "$DMG"
+  staple_retry "$DMG"
   echo "▸ 驗收:兩張票據都要在"
   #
   # 刻意分開驗 app 與 dmg。2026-10-21 之前這裡只驗 app 的 spctl,而 app 的
