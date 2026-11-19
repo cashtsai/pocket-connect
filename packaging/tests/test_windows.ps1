@@ -34,3 +34,4 @@ foreach ($mode in @('wsl1', 'root', 'no-systemd')) {
     if (-not $failed) { throw "Preflight accepted invalid state: $mode" }
 }
 Write-Host 'PASS: PowerShell parse, WSL2 preflight, WSL1/root/no-systemd rejection. No actual WSL installation performed.'
+$global:LASTEXITCODE = 0

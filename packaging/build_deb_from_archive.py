@@ -9,6 +9,7 @@ import tempfile
 import shutil
 import importlib.machinery
 import importlib.util
+import sys
 
 
 def main():
@@ -24,7 +25,13 @@ def main():
         loader = importlib.machinery.SourceFileLoader("controller", str(payload / "pocket-connect"))
         spec = importlib.util.spec_from_loader("controller", loader)
         controller = importlib.util.module_from_spec(spec)
-        loader.exec_module(controller)
+        # Inspection must not create an unlisted __pycache__ inside the payload.
+        previous = sys.dont_write_bytecode
+        try:
+            sys.dont_write_bytecode = True
+            loader.exec_module(controller)
+        finally:
+            sys.dont_write_bytecode = previous
         manifest = controller.verify_package(payload)
         version = manifest["version"].replace("-preview.", "~preview.")
         package = root / "deb"
