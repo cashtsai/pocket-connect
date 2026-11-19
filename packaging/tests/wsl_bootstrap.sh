@@ -7,7 +7,7 @@ if id pockettest >/dev/null 2>&1; then
   exit 1
 fi
 apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y sudo dbus-user-session python3
+DEBIAN_FRONTEND=noninteractive apt-get install -y sudo systemd systemd-sysv dbus-user-session python3
 useradd --create-home --shell /bin/bash pockettest
 python3 - <<'PY'
 import configparser
