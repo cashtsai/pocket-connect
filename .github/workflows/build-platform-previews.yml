@@ -6,6 +6,11 @@ on:
       - 'packaging/**'
       - '.github/workflows/build-platform-previews.yml'
   workflow_dispatch:
+    inputs:
+      wsl_integration:
+        description: 'Attempt real WSL2 lifecycle (hosted nested virtualization may stall)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,9 +75,10 @@ jobs:
         shell: pwsh
         run: ./packaging/tests/test_windows.ps1
   windows-wsl:
+    if: github.event_name == 'workflow_dispatch' && inputs.wsl_integration
     needs: ubuntu
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 12
     # Hosted nested-virtualization availability is not guaranteed. Inspect this
     # job's actual result separately; a skipped/failed WSL test is not a pass.
     continue-on-error: true
