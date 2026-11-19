@@ -1,9 +1,12 @@
 import hashlib
+import argparse
+from contextlib import ExitStack
 import importlib.machinery
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -86,6 +89,60 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(controller.unit_quote('/home/A B%/"test'), '"/home/A B%%/\\"test"')
         with self.assertRaises(ValueError):
             controller.unit_quote("bad\npath")
+        self.assertIn("WorkingDirectory=%h/.local/share/pocket-connect/current/bridge\n", controller.unit_text())
+
+    def test_failed_first_install_can_be_retried(self):
+        self.check_failed_install(previous=False)
+
+    def test_failed_upgrade_restores_runtime_and_settings(self):
+        self.check_failed_install(previous=True)
+
+    def check_failed_install(self, previous):
+        home = self.root / "home"
+        base = home / ".local/share/pocket-connect"
+        config = home / ".config/pocket-connect"
+        unit = home / ".config/systemd/user/pocket-connect.service"
+        current = base / "current"
+        old = base / "releases/old"
+        args = argparse.Namespace(package_dir=str(self.root), no_start=False, port=0, lan=False)
+        # The package fixture must not include mutable installation state.
+        package = tempfile.TemporaryDirectory()
+        self.addCleanup(package.cleanup)
+        import shutil
+        shutil.copytree(self.root, Path(package.name) / "payload")
+        args.package_dir = str(Path(package.name) / "payload")
+        if previous:
+            old.mkdir(parents=True)
+            current.symlink_to(old)
+            unit.parent.mkdir(parents=True)
+            unit.write_text("old unit")
+            config.mkdir(parents=True)
+            (config / "settings.json").write_text('{"port": 18081, "bind": "127.0.0.1"}')
+            (base / "pocket-connect").write_bytes(b"old launcher")
+        def fail_restart(command, **kwargs):
+            if command[:3] == ["systemctl", "--user", "restart"]:
+                raise subprocess.CalledProcessError(1, command)
+        with ExitStack() as stack:
+            for key, value in {"HOME": home, "BASE": base, "CONFIG": config, "STATE": home / "state", "UNIT_FILE": unit, "CURRENT": current}.items():
+                stack.enter_context(patch.object(controller, key, value))
+            stack.enter_context(patch.object(controller, "check_platform"))
+            stack.enter_context(patch.object(controller, "systemd_ready", return_value=True))
+            stack.enter_context(patch.object(controller.subprocess, "run"))
+            stack.enter_context(patch.object(controller.socket, "socket"))
+            stack.enter_context(patch.object(controller, "run", side_effect=fail_restart))
+            with self.assertRaises(subprocess.CalledProcessError):
+                controller.install(args)
+            if previous:
+                self.assertEqual(current.resolve(), old.resolve())
+                self.assertEqual(unit.read_text(), "old unit")
+                self.assertEqual((base / "pocket-connect").read_bytes(), b"old launcher")
+                self.assertNotIn("version", json.loads((config / "settings.json").read_text()))
+            else:
+                self.assertFalse(unit.exists())
+                self.assertFalse(current.is_symlink())
+                args.no_start = True
+                controller.install(args)
+                self.assertTrue(current.is_symlink())
 
     def test_switch_preserves_previous(self):
         previous = self.root / "releases/old"

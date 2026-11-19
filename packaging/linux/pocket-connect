@@ -60,7 +60,7 @@ def unit_text():
         "[Unit]", "Description=Pocket Connect (per-user bridge)",
         "After=network-online.target", "StartLimitIntervalSec=300", "StartLimitBurst=5", "",
         "[Service]", "Type=simple", "UMask=0077",
-        f"WorkingDirectory={unit_quote(CURRENT / 'bridge')}",
+        "WorkingDirectory=%h/.local/share/pocket-connect/current/bridge",
         f"ExecStart=/usr/bin/python3 {unit_quote(launcher)} run",
         "Restart=on-failure", "RestartSec=5", "TimeoutStopSec=15", "KillMode=control-group", "",
         "[Install]", "WantedBy=default.target", "",
@@ -171,15 +171,15 @@ def install(args):
         settings["path"] = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
         old_unit = UNIT_FILE.read_text() if UNIT_FILE.exists() else None
         old_launcher = (BASE / "pocket-connect").read_bytes() if (BASE / "pocket-connect").exists() else None
-        private_write(settings_path, json.dumps(settings, indent=2) + "\n")
-        shutil.copy2(root / "pocket-connect", BASE / "pocket-connect")
-        os.chmod(BASE / "pocket-connect", 0o700)
-        private_write(UNIT_FILE, unit_text())
-        switch(target)
-        if args.no_start:
-            print("Installed without starting. Run: pocket-connect start")
-            return
         try:
+            private_write(settings_path, json.dumps(settings, indent=2) + "\n")
+            shutil.copy2(root / "pocket-connect", BASE / "pocket-connect")
+            os.chmod(BASE / "pocket-connect", 0o700)
+            private_write(UNIT_FILE, unit_text())
+            switch(target)
+            if args.no_start:
+                print("Installed without starting. Run: pocket-connect start")
+                return
             run(["systemctl", "--user", "daemon-reload"])
             run(["systemctl", "--user", "enable", UNIT])
             run(["systemctl", "--user", "restart", UNIT])
@@ -192,20 +192,29 @@ def install(args):
                         raise ValueError("Bridge did not pass authenticated readiness")
                     time.sleep(1)
         except Exception:
-            subprocess.run(["systemctl", "--user", "stop", UNIT], check=False)
+            if not args.no_start:
+                subprocess.run(["systemctl", "--user", "stop", UNIT], check=False)
+            for path, old_content in [(settings_path, old_settings), (UNIT_FILE, old_unit)]:
+                if old_content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    private_write(path, old_content)
+            if old_launcher is None:
+                (BASE / "pocket-connect").unlink(missing_ok=True)
+            else:
+                (BASE / "pocket-connect").write_bytes(old_launcher)
             if previous:
                 switch(previous)
-                private_write(settings_path, old_settings)
-                if old_launcher is not None:
-                    (BASE / "pocket-connect").write_bytes(old_launcher)
-                if old_unit is not None:
-                    private_write(UNIT_FILE, old_unit)
-                run(["systemctl", "--user", "daemon-reload"])
-                run(["systemctl", "--user", "start", UNIT])
+                if not args.no_start:
+                    run(["systemctl", "--user", "daemon-reload"])
+                    run(["systemctl", "--user", "start", UNIT])
                 print("Previous installation restored; user data and tokens retained.", file=sys.stderr)
             else:
-                subprocess.run(["systemctl", "--user", "disable", UNIT], check=False)
+                if not args.no_start:
+                    subprocess.run(["systemctl", "--user", "disable", UNIT], check=False)
+                    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
                 CURRENT.unlink(missing_ok=True)
+            shutil.rmtree(target)
             raise
         print("Pocket Connect is ready. Run: pocket-connect pair")
         if settings["bind"] == "127.0.0.1":

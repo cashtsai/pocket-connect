@@ -86,6 +86,8 @@ function Invoke-PocketMain {
             } elseif (Test-Path $ShortcutPath) {
                 Remove-Item -LiteralPath $ShortcutPath
             }
+            $startArgs = '-NoProfile -WindowStyle Hidden -ExecutionPolicy RemoteSigned -File "' + (Join-Path $InstallRoot 'Pocket-Connect.ps1') + '" -Action Start'
+            Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $startArgs
             Write-Host 'Installed. Login autostart is enabled unless -NoAutostart was selected. Not a pre-login Windows service.'
             Write-Host 'Phone access still requires a route into WSL (recommended: Tailscale inside WSL + Serve). See README. Do not scan an unreachable NAT address.'
             Write-Host "Run: powershell -File `"$InstallRoot\Pocket-Connect.ps1`" -Action Pair"

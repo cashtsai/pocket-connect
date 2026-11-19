@@ -59,7 +59,7 @@ sessions are **not** automatically shared with the Linux runtime.
    with `-Action Pair`. It opens the local QR in the Windows browser. Check the
    reachable URL and pair the iPhone, then verify a real provider reply.
 
-The installer adds a **current-user login** startup shortcut, not a pre-login
+The installer starts a background WSL keepalive and adds a **current-user login** startup shortcut, not a pre-login
 Windows service. Use `-NoAutostart` to opt out. `-Action Start` runs a foreground
 WSL keepalive because systemd services alone do not keep a distro alive. Closing
 that command, signing out, sleeping, or `wsl --shutdown` can interrupt work.
