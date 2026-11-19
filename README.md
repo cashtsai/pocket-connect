@@ -55,7 +55,7 @@ blocks Apple's notary service.
 Full walkthrough, why free mode asks for iCloud, pairing, and troubleshooting:
 **[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**.
 End-user questions about the phone app live in the
-[FAQ on the website](https://pocketone.app/faq).
+[FAQ on the website](https://pocketone.app/#faq).
 
 ## Connecting
 

@@ -46,7 +46,7 @@ Windows 版透過 WSL2 執行，不是原生 EXE。Agent 需在 WSL 內安裝登
 
 完整流程、免費模式為什麼要開 iCloud、配對、常見狀況:
 **[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**。
-手機 App 本身的問題在[官網的常見問題](https://pocketone.app/faq)。
+手機 App 本身的問題在[官網的常見問題](https://pocketone.app/#faq)。
 
 ## 連線方式
 
