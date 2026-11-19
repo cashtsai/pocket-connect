@@ -2,7 +2,7 @@
 
 [English](README.md) · **繁體中文**
 
-[Pocket](https://pocket.shan.house) 的桌面端。裝在你 agent 本來就在跑的那台 Mac 上
+[Pocket](https://pocketone.app) 的桌面端。裝在你 agent 本來就在跑的那台 Mac 上
 —— Claude Code、Codex、Hermes 人格 —— 手機掃一張 QR 就配對完成。零手打網址、
 零貼 token。
 
@@ -14,8 +14,18 @@
 |---|---|
 | **`mac-app/`** | 選單列 App(SwiftPM,無 Dock 圖示)。環境檢查與一鍵安裝 bridge、Apple 登入、配對 QR、裝置清單、連線設定。可打包成已簽章的 `.dmg`。這是主體。 |
 | **`relay/`** | 想用自己的固定網址取代內建臨時通道時的參考資料。選配。 |
+| **`packaging/`** | Ubuntu DEB／Linux 與 Windows WSL2 預覽版安裝流程，尚不代表與 macOS 完全相同的功能。 |
 
-## 安裝
+## Ubuntu／Windows 預覽版
+
+安裝包與 CI 測試已完成，含 bridge 的公開發行仍待 owner 核准；正式發布前，請勿假定 GitHub 上已有下載檔。
+
+- [安裝、網路設定與排錯](packaging/README.md)
+- [維護交接、驗收範圍與發布條件](docs/PLATFORM_PREVIEW_HANDOFF_2026-11-19.md)
+
+Windows 版透過 WSL2 執行，不是原生 EXE。Agent 需在 WSL 內安裝登入，不會自動同步 Windows 原生 App 的 session。這兩個預覽版預設僅監聽 localhost，手機連線需要另設網路路徑。
+
+## macOS 安裝
 
 1. 從 [Releases](https://github.com/cashtsai/pocket-connect/releases) 下載最新的
    `Pocket-<版本>.dmg`(想核對的話附有 `.sha256`)。
@@ -36,7 +46,7 @@
 
 完整流程、免費模式為什麼要開 iCloud、配對、常見狀況:
 **[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**。
-手機 App 本身的問題在[官網的常見問題](https://pocket.shan.house/#faq)。
+手機 App 本身的問題在[官網的常見問題](https://pocketone.app/faq)。
 
 ## 連線方式
 
@@ -61,7 +71,7 @@ swift run                            # 選單列出現圖示
 NOTARIZE=1 BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh   # 正式那顆
 ```
 
-**發版是本機做的,不是 CI**:
+**macOS 發版是本機做的,不是 CI**:
 
 ```bash
 ./packaging/cut_release.sh minor     # 升版號、tag、推送 —— 跑完會告訴你還剩什麼
@@ -69,9 +79,11 @@ gh release create "vX.Y.Z" build/dist/Pocket-X.Y.Z.dmg build/dist/Pocket-X.Y.Z.d
 ./packaging/verify_release.sh vX.Y.Z # 驗使用者真的會下載到的那顆
 ```
 
-CI 永不碰 release 資產,只跑測試與確認 DMG 組得起來。理由寫在
+macOS CI 永不碰 release 資產,只跑測試與確認 DMG 組得起來。理由寫在
 `.github/workflows/release.yml`:CI 連不到私有的 bridge repo,它建的 DMG 裡**沒有
 bridge**,而且曾兩次跟本機正貨搶著掛上 `releases/latest`。
+
+跨平台預覽版另有獨立 workflow，只產生已消毒的 Linux／WSL 測試產物，不會自動公開發行或取代 macOS 的 latest。
 
 **上傳完一定要跑 `verify_release.sh`。** 它會下載已發布的資產,檢查簽章、公證、
 兩張 staple 票據與內含的 payload —— **本機那顆過了,不能證明上傳的那顆也過**。
