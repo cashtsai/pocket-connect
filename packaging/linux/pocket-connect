@@ -27,7 +27,19 @@ CURRENT = BASE / "current"
 
 
 def run(args, **kwargs):
+    if str(args[0]) in ["systemctl", "journalctl"]:
+        kwargs.setdefault("env", systemd_environment())
     return subprocess.run([str(a) for a in args], check=True, **kwargs)
+
+
+def systemd_environment(runtime_dir=None):
+    env = os.environ.copy()
+    directory = Path(runtime_dir or f"/run/user/{os.geteuid()}")
+    # Headless SSH/sudo sessions can omit XDG_RUNTIME_DIR even with linger active.
+    if not env.get("XDG_RUNTIME_DIR") and directory.is_dir() and directory.stat().st_uid == os.geteuid():
+        env["XDG_RUNTIME_DIR"] = str(directory)
+        env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={directory}/bus")
+    return env
 
 
 def private_write(path, content):
@@ -90,7 +102,7 @@ def verify_package(root):
 def systemd_ready():
     return shutil.which("systemctl") and subprocess.run(
         ["systemctl", "--user", "show-environment"], stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL).returncode == 0
+        stderr=subprocess.DEVNULL, env=systemd_environment()).returncode == 0
 
 
 def check_platform():
@@ -193,7 +205,7 @@ def install(args):
                     time.sleep(1)
         except Exception:
             if not args.no_start:
-                subprocess.run(["systemctl", "--user", "stop", UNIT], check=False)
+                subprocess.run(["systemctl", "--user", "stop", UNIT], check=False, env=systemd_environment())
             for path, old_content in [(settings_path, old_settings), (UNIT_FILE, old_unit)]:
                 if old_content is None:
                     path.unlink(missing_ok=True)
@@ -211,8 +223,8 @@ def install(args):
                 print("Previous installation restored; user data and tokens retained.", file=sys.stderr)
             else:
                 if not args.no_start:
-                    subprocess.run(["systemctl", "--user", "disable", UNIT], check=False)
-                    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+                    subprocess.run(["systemctl", "--user", "disable", UNIT], check=False, env=systemd_environment())
+                    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False, env=systemd_environment())
                 CURRENT.unlink(missing_ok=True)
             shutil.rmtree(target)
             raise

@@ -86,6 +86,16 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(path.read_text(), "second")
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_headless_systemd_environment(self):
+        with patch.dict(controller.os.environ, {}, clear=True):
+            env = controller.systemd_environment(self.root)
+            self.assertEqual(env["XDG_RUNTIME_DIR"], str(self.root))
+            self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"], f"unix:path={self.root}/bus")
+        with patch.dict(controller.os.environ, {"XDG_RUNTIME_DIR": "/explicit/session"}, clear=True):
+            self.assertEqual(controller.systemd_environment(self.root)["XDG_RUNTIME_DIR"], "/explicit/session")
+        with patch.dict(controller.os.environ, {}, clear=True), patch.object(controller.os, "geteuid", return_value=123456):
+            self.assertNotIn("XDG_RUNTIME_DIR", controller.systemd_environment(self.root))
+
     def test_systemd_escaping(self):
         self.assertEqual(controller.unit_quote('/home/A B%/"test'), '"/home/A B%%/\\"test"')
         with self.assertRaises(ValueError):

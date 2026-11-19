@@ -86,6 +86,12 @@ def main():
             route_file.unlink(missing_ok=True)
         subprocess.run(["pocket-connect", "status"], check=True)
         subprocess.run(["pocket-connect", "doctor"], check=True)
+        if args.systemd:
+            headless = os.environ.copy()
+            headless.pop("XDG_RUNTIME_DIR", None)
+            headless.pop("DBUS_SESSION_BUS_ADDRESS", None)
+            doctor = subprocess.run(["pocket-connect", "doctor"], check=True, capture_output=True, text=True, env=headless)
+            assert json.loads(doctor.stdout)["user_systemd"] is True
         assert (home / ".local/share/pocket-connect/current/bridge/static/console/index.html").exists()
         print("PASS: runtime, authenticated capabilities, invalid-token rejection, QR gate, actual Console page, headless link (test route only)")
         passed = True

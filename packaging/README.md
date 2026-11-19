@@ -4,6 +4,14 @@ This package installs a real Pocket bridge on your own computer. It is not a
 browser-only Console shortcut. It does not install or include AI subscriptions.
 The existing macOS app/release is unchanged.
 
+The service flags follow the existing Mac/Ubuntu installers: the local Console
+is enabled, remote Console retains the Relay-only access policy, remote file
+roots stay closed, and native Pocket can use the headless provider sign-in
+endpoints after device authentication. No account, provider binary, paid Cloud
+plan, managed-host enrollment or public tunnel is provisioned by this package.
+Codex keeps the bridge's isolated Linux default; a separate managed-daemon
+service and Mac desktop-app session parity are not supplied in this preview.
+
 ## Ubuntu 22.04+ / Debian 12+
 
 1. Download the `.deb` and matching `SHA256SUMS` from the official Pocket Connect
