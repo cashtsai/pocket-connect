@@ -122,7 +122,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bridge-source", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=REPO / "dist")
-    parser.add_argument("--version", default="1.0.2-preview.1")
+    parser.add_argument("--version", default="1.0.2-preview.2")
     parser.add_argument("--no-deb", action="store_true")
     args = parser.parse_args()
     build(args.bridge_source.resolve(), args.output.resolve(), args.version, args.no_deb)

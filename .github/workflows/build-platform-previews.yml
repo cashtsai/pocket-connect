@@ -69,3 +69,19 @@ jobs:
       - name: PowerShell 7 checks
         shell: pwsh
         run: ./packaging/tests/test_windows.ps1
+  windows-wsl:
+    needs: ubuntu
+    runs-on: windows-2025
+    timeout-minutes: 20
+    # Hosted nested-virtualization availability is not guaranteed. Inspect this
+    # job's actual result separately; a skipped/failed WSL test is not a pass.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pocket-connect-platform-previews
+          path: dist
+      - name: Real WSL2 install and lifecycle attempt
+        shell: pwsh
+        run: ./packaging/tests/test_windows_wsl.ps1 -ArtifactDirectory ./dist

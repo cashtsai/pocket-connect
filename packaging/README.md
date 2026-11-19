@@ -29,6 +29,13 @@ The existing macOS app/release is unchanged.
 Login starts the user service. For boot without login, explicitly enable linger:
 `sudo loginctl enable-linger "$USER"`. A sleeping/offline host cannot run tasks.
 
+For a headless Ubuntu host, set up the phone-reachable network route first and
+run `pocket-connect pair --link`. This prints a private, single-use link valid
+for 15 minutes; open it only on your own phone and never paste it into logs or
+support tickets. A host without a reachable route returns an error, not a dead QR.
+For the local browser Console, run `pocket-connect console`. On a headless host,
+use an SSH local port forward and `pocket-connect console --url` privately.
+
 ## Windows 11 + WSL2 Ubuntu 24.04
 
 This is a **WSL2 installer ZIP**, not a native Windows `.exe` service or signed
@@ -50,6 +57,8 @@ sessions are **not** automatically shared with the Linux runtime.
    for the password created in step 1. It installs Python prerequisites inside
    your selected distro, checks the bundled payload, and enables its user service.
    For an existing different distro: `powershell -File .\Pocket-Connect.ps1 -Distro Ubuntu -Action Install`.
+   For a busy default port on the first install, add `-Port 8082` and point your
+   private network forwarding to that same port. Reinstall retains the saved port.
 5. Install/sign in to Claude Code or Codex **inside WSL**. Configure Tailscale
    **inside WSL** plus private Serve and on your phone. Installing Tailscale only
    on Windows does not automatically expose a localhost-only WSL service.
@@ -58,6 +67,7 @@ sessions are **not** automatically shared with the Linux runtime.
 6. Run the installed script at `%LOCALAPPDATA%\PocketConnect\Pocket-Connect.ps1`
    with `-Action Pair`. It opens the local QR in the Windows browser. Check the
    reachable URL and pair the iPhone, then verify a real provider reply.
+   Use `-Action Console` to open the authenticated local Console in Windows.
 
 The installer starts a background WSL keepalive and adds a **current-user login** startup shortcut, not a pre-login
 Windows service. Use `-NoAutostart` to opt out. `-Action Start` runs a foreground
@@ -98,7 +108,7 @@ checks integrity, not publisher identity; use only the official release origin.
 On Ubuntu with `dpkg-deb` and Python 3.10+:
 
 ```
-python3 packaging/build_platforms.py --bridge-source /path/to/bridge --version 1.0.2-preview.1
+python3 packaging/build_platforms.py --bridge-source /path/to/bridge --version 1.0.2-preview.2
 ```
 
 Uses the existing private `POCKET_SANITIZE_TABLE` (or standard release location).

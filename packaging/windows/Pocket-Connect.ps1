@@ -1,10 +1,12 @@
 # Windows entry point. Bridge and provider sessions run inside the chosen WSL2 distro.
 [CmdletBinding()]
 param(
-    [ValidateSet('Install', 'Start', 'Status', 'Pair', 'Uninstall')]
+    [ValidateSet('Install', 'Start', 'Status', 'Pair', 'Console', 'Uninstall')]
     [string]$Action = 'Install',
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')]
     [string]$Distro = 'Ubuntu-24.04',
+    [ValidateRange(1024, 65535)]
+    [int]$Port = 8081,
     [switch]$NoAutostart
 )
 $ErrorActionPreference = 'Stop'
@@ -68,7 +70,7 @@ function Invoke-PocketMain {
                 Invoke-Wsl -Command @('tar', '-xzf', $linuxPackage, '-C', $temporary)
                 Invoke-Wsl -Command @('sudo', 'apt-get', 'update')
                 Invoke-Wsl -Command @('sudo', 'apt-get', 'install', '-y', 'python3', 'python3-venv', 'ca-certificates', 'tmux', 'curl')
-                Invoke-Wsl -Command @('python3', "$temporary/pocket-connect/pocket-connect", 'install', '--package-dir', "$temporary/pocket-connect")
+                Invoke-Wsl -Command @('python3', "$temporary/pocket-connect/pocket-connect", 'install', '--package-dir', "$temporary/pocket-connect", '--port', "$Port")
             } finally {
                 Invoke-Wsl -Command @('rm', '-rf', '--', $temporary)
             }
@@ -98,6 +100,11 @@ function Invoke-PocketMain {
         'Pair' {
             $url = ((Invoke-Wsl -Command @('python3', $linuxLauncher, 'pair', '--url')) -join '').Trim()
             if ($url -notmatch '^http://127\.0\.0\.1:[0-9]+/pair/qr\?boot=[A-Za-z0-9_%~-]+$') { throw 'Unexpected pairing URL; not opening it' }
+            Start-Process $url
+        }
+        'Console' {
+            $url = ((Invoke-Wsl -Command @('python3', $linuxLauncher, 'console', '--url')) -join '').Trim()
+            if ($url -notmatch '^http://127\.0\.0\.1:[0-9]+/console\?boot=[A-Za-z0-9_%~-]+$') { throw 'Unexpected Console URL; not opening it' }
             Start-Process $url
         }
         'Uninstall' {

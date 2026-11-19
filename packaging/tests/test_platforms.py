@@ -4,6 +4,7 @@ from contextlib import ExitStack
 import importlib.machinery
 import importlib.util
 import json
+import io
 from pathlib import Path
 import tempfile
 import subprocess
@@ -163,6 +164,21 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(env["BRIDGE_TOKEN"], "test-token")
         self.assertIn(":18081/", env["CCSESS_HOOK_URL"])
         self.assertIn("/sample/bin", env["PATH"])
+        self.assertEqual(env["POCKET_CONSOLE_ENABLED"], "1")
+        self.assertEqual(env["POCKET_CONSOLE_ENTRY_MODE"], "relay")
+        self.assertEqual(env["POCKET_AGENT_LOGIN_IN_APP"], "1")
+        self.assertEqual(env["POCKET_CONSOLE_REMOTE_FILE_ROOTS"], "")
+
+    def test_headless_pair_link_requires_route_and_short_ttl(self):
+        (self.root / "pair-boot-code").write_text("test-boot")
+        with patch.object(controller, "CONFIG", self.root):
+            with patch.object(controller.urllib.request, "urlopen", return_value=io.BytesIO(b'{"ok":false}')):
+                with self.assertRaisesRegex(ValueError, "No pairing route"):
+                    controller.pairing_link({"port": 18081})
+            with patch.object(controller.urllib.request, "urlopen", return_value=io.BytesIO(b'{"ok":true,"payload":"pocket://pair?code=test"}')) as request:
+                self.assertEqual(controller.pairing_link({"port": 18081}), "pocket://pair?code=test")
+                self.assertIn("/pair/qr.json?boot=test-boot&ttl=900", request.call_args.args[0])
+            self.assertEqual(controller.local_entry_url({"port": 18081}, console=True), "http://127.0.0.1:18081/console?boot=test-boot")
 
 
 if __name__ == "__main__":

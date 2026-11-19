@@ -228,6 +228,11 @@ def runtime_env(settings):
         "BRIDGE_TOKEN": (CONFIG / "bridge-token").read_text().strip(),
         "PAIR_BOOT_CODE_FILE": str(CONFIG / "pair-boot-code"),
         "POCKET_BRIDGE_PORT": str(settings["port"]),
+        "POCKET_CONSOLE_ENABLED": "1",
+        "POCKET_CONSOLE_ENTRY_MODE": "relay",
+        "POCKET_CONSOLE_QR_LOGIN": "0",
+        "POCKET_CONSOLE_REMOTE_FILE_ROOTS": "",
+        "POCKET_AGENT_LOGIN_IN_APP": "1",
         "CCSESS_HOOK_URL": f"http://127.0.0.1:{settings['port']}/ccsessions/_hook",
         "POCKET_TUNNEL_URL_FILE": str(CONFIG / "tunnel-url"),
         "POCKET_BRIDGE_CRASH_STATE_DIR": str(STATE),
@@ -235,6 +240,22 @@ def runtime_env(settings):
         "PATH": str(HOME / ".local/bin") + ":" + settings.get("path", "/usr/local/bin:/usr/bin:/bin"),
     })
     return env
+
+
+def local_entry_url(settings, console=False):
+    code = (CONFIG / "pair-boot-code").read_text().strip()
+    route = "/console" if console else "/pair/qr"
+    return f"http://127.0.0.1:{settings['port']}{route}?boot={urllib.parse.quote(code)}"
+
+
+def pairing_link(settings):
+    url = local_entry_url(settings).replace("/pair/qr?", "/pair/qr.json?") + "&ttl=900"
+    with urllib.request.urlopen(url, timeout=15) as response:
+        data = json.load(response)
+    payload = data.get("payload", "")
+    if not data.get("ok") or not payload.startswith("pocket://pair?"):
+        raise ValueError("No pairing route. Configure private Tailscale Serve or explicitly opt into trusted LAN access first.")
+    return payload
 
 
 def main():
@@ -253,7 +274,11 @@ def main():
     sub.add_parser("doctor")
     sub.add_parser("logs")
     pair = sub.add_parser("pair")
-    pair.add_argument("--url", action="store_true", help="Print private pairing URL for local browser handoff only")
+    pair_output = pair.add_mutually_exclusive_group()
+    pair_output.add_argument("--url", action="store_true", help="Print private pairing URL for local browser handoff only")
+    pair_output.add_argument("--link", action="store_true", help="Print a private 15-minute single-use phone pairing link (headless hosts)")
+    console = sub.add_parser("console")
+    console.add_argument("--url", action="store_true", help="Print private local Console URL for browser handoff only")
     remove = sub.add_parser("uninstall")
     remove.add_argument("--yes", action="store_true")
     args = parser.parse_args()
@@ -284,11 +309,13 @@ def main():
         settings = config()
         health(settings, authenticated=True)
         print("Bridge authenticated health OK; model sign-in and phone reachability must be checked separately.")
-    elif args.command == "pair":
+    elif args.command in ["pair", "console"]:
         settings = config()
         health(settings, authenticated=True)
-        code = (CONFIG / "pair-boot-code").read_text().strip()
-        url = f"http://127.0.0.1:{settings['port']}/pair/qr?boot={urllib.parse.quote(code)}"
+        if args.command == "pair" and args.link:
+            print(pairing_link(settings))
+            return
+        url = local_entry_url(settings, console=args.command == "console")
         if args.url:
             print(url)
         else:
