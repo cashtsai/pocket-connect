@@ -50,7 +50,7 @@ def main():
         (control / "control").write_text(
             f"Package: pocket-connect\nVersion: {version}\nArchitecture: all\n"
             "Maintainer: Pocket <developer@shan.house>\nSection: net\nPriority: optional\n"
-            "Depends: python3 (>= 3.10), python3-venv, ca-certificates, tmux, systemd, curl\n"
+            "Depends: python3 (>= 3.10), python3-venv, ca-certificates, tmux, systemd, dbus-user-session, curl\n"
             "Homepage: https://pocketone.app\nDescription: Pocket Connect per-user bridge (preview)\n"
             " Run pocket-connect install as your normal user after installing this package.\n")
         for p in [package, *[p for p in package.rglob("*") if p.is_dir()]]:

@@ -38,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y ./dist/*.deb dbus-user-session
+          sudo apt-get install -y ./dist/*.deb
           sudo useradd --create-home pockettest
           sudo loginctl enable-linger pockettest
           sudo install -m 0644 packaging/tests/smoke_linux.py /home/pockettest/smoke_linux.py
