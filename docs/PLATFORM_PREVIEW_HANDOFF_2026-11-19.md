@@ -12,7 +12,15 @@
 - Public assets downloaded without authentication and checked against SHA256SUMS.
 - Mac stable/latest remains v1.0.1. No production bridge, cloud host or iOS changes.
 - Official website rollout is in the existing Lovable project
-  `fb2af823-f900-488b-bdf6-f8ece7326f42`; download enablement follows public verification.
+  `fb2af823-f900-488b-bdf6-f8ece7326f42`; commit
+  `efa367e518c478b348f3b57a971d7a40a807e73f` is published at https://pocketone.app.
+  Deployment `d8d823a7-fc46-4c97-9481-66ced6e3f471` was independently verified
+  against the live custom domain, not merely accepted as a pending publish job.
+  Website tests: 59 pass, typecheck pass, 32 pre-publish browser states pass.
+  Separate live-domain QA: 32 states pass (zh/en, 375/390/768/1440, three OS
+  selectors and Ubuntu/Windows guides), no horizontal overflow/broken images or
+  runtime errors. Evidence: `/tmp/pocket-platform-download-qa/report.json` locally;
+  website repo `docs/QA_PLATFORM_RELEASE_2026-11-19.json` and `public/qa/` screenshots.
 
 ## Evidence and limitations
 
@@ -29,6 +37,9 @@
 - CI-only follow-up `5a4b107` passed Ubuntu/shell checks in
   [44478729571](https://github.com/cashtsai/pocket-connect/actions/runs/44478729571),
   with WSL explicitly SKIPPED. Its rebuilt artifacts are NOT the public release.
+- Final CI filter fix `9341ed7` passes Ubuntu/shell in
+  [44479378599](https://github.com/cashtsai/pocket-connect/actions/runs/44479378599),
+  WSL SKIPPED. Branch builds stay enabled; release tags no longer duplicate them.
 - Earlier ARM64 Ubuntu24.04 container runtime/auth/reinstall smoke passed, without
   systemd/reboot/phone. This is not physical ARM64 platform qualification.
 
