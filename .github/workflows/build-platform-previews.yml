@@ -41,12 +41,14 @@ jobs:
           sudo apt-get install -y ./dist/*.deb dbus-user-session
           sudo useradd --create-home pockettest
           sudo loginctl enable-linger pockettest
+          sudo install -m 0644 packaging/tests/smoke_linux.py /home/pockettest/smoke_linux.py
           uid=$(id -u pockettest)
+          sudo systemctl start "user@$uid.service"
           for i in $(seq 1 20); do
             test -S "/run/user/$uid/bus" && break
             sleep 1
           done
-          sudo -u pockettest env HOME=/home/pockettest USER=pockettest POCKET_ISOLATED_TEST=1 XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" python3 "$GITHUB_WORKSPACE/packaging/tests/smoke_linux.py" --systemd
+          sudo -u pockettest env HOME=/home/pockettest USER=pockettest POCKET_ISOLATED_TEST=1 XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" python3 /home/pockettest/smoke_linux.py --systemd
       - uses: actions/upload-artifact@v4
         with:
           name: pocket-connect-platform-previews

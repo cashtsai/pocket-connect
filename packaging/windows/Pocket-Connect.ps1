@@ -83,6 +83,8 @@ function Invoke-PocketMain {
                 $shortcut.WorkingDirectory = $InstallRoot
                 $shortcut.Description = 'Pocket Connect WSL keepalive (current user)'
                 $shortcut.Save()
+            } elseif (Test-Path $ShortcutPath) {
+                Remove-Item -LiteralPath $ShortcutPath
             }
             Write-Host 'Installed. Login autostart is enabled unless -NoAutostart was selected. Not a pre-login Windows service.'
             Write-Host 'Phone access still requires a route into WSL (recommended: Tailscale inside WSL + Serve). See README. Do not scan an unreachable NAT address.'

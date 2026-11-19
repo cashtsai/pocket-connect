@@ -40,7 +40,11 @@ def main():
         (package / "usr/bin/pocket-connect").symlink_to("../lib/pocket-connect/pocket-connect")
         desktop = package / "usr/share/applications"
         desktop.mkdir(parents=True)
-        shutil.copy2(Path(__file__).parent / "linux/pocket-connect.desktop", desktop)
+        for entry in (Path(__file__).parent / "linux").glob("*.desktop"):
+            shutil.copy2(entry, desktop)
+        icons = package / "usr/share/icons/hicolor/512x512/apps"
+        icons.mkdir(parents=True)
+        shutil.copy2(payload / "bridge/static/console/icon-512.png", icons / "pocket-connect.png")
         control = package / "DEBIAN"
         control.mkdir()
         (control / "control").write_text(

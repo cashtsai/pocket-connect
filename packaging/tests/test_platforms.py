@@ -20,9 +20,22 @@ def module(name, path):
 
 controller = module("controller", ROOT / "packaging/linux/pocket-connect")
 builder = module("builder", ROOT / "packaging/build_platforms.py")
+sanitizer = module("sanitizer", ROOT / "mac-app/packaging/sanitize_bridge_payload.py")
+verifier = module("verifier", ROOT / "mac-app/packaging/verify_payload_clean.py")
 
 
 class PackageTests(unittest.TestCase):
+    def test_public_network_constant_is_preserved_but_host_addresses_are_not(self):
+        import ipaddress
+        text = 'ipaddress.ip_network("100.64.0.0/10")'
+        for pattern, replacement in sanitizer.SHAPE_RULES:
+            text = pattern.sub(replacement, text)
+        self.assertIn('100.64.0.0/10', text)
+        self.assertEqual(ipaddress.ip_network('100.64.0.0/10').prefixlen, 10)
+        self.assertIsNone(verifier.SHAPES['tailnet IP'].search(text))
+        self.assertIsNotNone(verifier.SHAPES['tailnet IP'].search('100.64.0.0'))
+        self.assertIsNotNone(verifier.SHAPES['tailnet IP'].search('100.71.2.3'))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

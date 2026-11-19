@@ -34,6 +34,7 @@ def main():
     if not args.systemd:
         log = (home / "smoke.log").open("w")
         process = subprocess.Popen(["pocket-connect", "run"], stdout=log, stderr=log)
+    passed = False
     try:
         for i in range(40):
             try:
@@ -61,7 +62,13 @@ def main():
         subprocess.run(["pocket-connect", "doctor"], check=True)
         assert (home / ".local/share/pocket-connect/current/bridge/static/console/index.html").exists()
         print("PASS: install, runtime, authenticated capabilities, invalid-token rejection, QR gate, bundled Console")
+        passed = True
     finally:
+        if not passed:
+            if process:
+                print((home / "smoke.log").read_text()[-12000:])
+            else:
+                subprocess.run(["pocket-connect", "logs"], check=False)
         if process:
             process.terminate()
             try:

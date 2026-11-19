@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Pocket Connect Pair
+Comment=Pair your iPhone with this Pocket host
+Exec=/usr/bin/pocket-connect pair
+Terminal=false
+Categories=Development;Network;
+Icon=pocket-connect
