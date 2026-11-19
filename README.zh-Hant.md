@@ -18,7 +18,7 @@
 
 ## Ubuntu／Windows 預覽版
 
-安裝包與 CI 測試已完成，含 bridge 的公開發行仍待 owner 核准；正式發布前，請勿假定 GitHub 上已有下載檔。
+[下載 1.0.2-preview.2](https://github.com/cashtsai/pocket-connect/releases/tag/platforms-v1.0.2-preview.2)，公開下載與 `SHA256SUMS` 已驗證。Ubuntu 24.04 x86_64 已通過實際安裝；Windows 為實驗性 WSL2 預覽版，PowerShell 檢查通過，但 CI 在 WSL 啟動時卡住，尚未進入安裝。Windows 實機、手機配對與供應商回覆仍待驗收。Mac v1.0.1 穩定版不變。
 
 - [安裝、網路設定與排錯](packaging/README.md)
 - [維護交接、驗收範圍與發布條件](docs/PLATFORM_PREVIEW_HANDOFF_2026-11-19.md)

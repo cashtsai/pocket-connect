@@ -19,9 +19,11 @@ anywhere, and hands the phone a pairing QR.
 
 ## Ubuntu / Windows preview
 
-The platform installers and their CI checks are implemented. Public release of
-the bundled runtime is pending owner approval; do not assume a download exists
-until the corresponding GitHub release is published.
+[Download 1.0.2-preview.2](https://github.com/cashtsai/pocket-connect/releases/tag/platforms-v1.0.2-preview.2)
+for Ubuntu or Windows WSL2. Public downloads and `SHA256SUMS` have been verified.
+Ubuntu 24.04 x86_64 installation is tested. Windows is experimental: shell checks
+pass, but the hosted WSL startup stalled before installation; real Windows and
+phone/provider acceptance remain outstanding. macOS v1.0.1 remains stable/latest.
 
 - [Setup and troubleshooting](packaging/README.md)
 - [Build handoff, verified scope and release gate](docs/PLATFORM_PREVIEW_HANDOFF_2026-11-19.md)

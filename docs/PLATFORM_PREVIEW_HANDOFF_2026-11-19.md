@@ -1,93 +1,93 @@
 # Ubuntu / Windows WSL2 platform preview handoff
 
-## State
+## Release state
 
-- Branch: `codex/connect-linux-windows`.
-- Tested package source: `1a657ab1b26c133863430a659214bba42b2bb8b4`.
-- Runtime revision: `54e089e653766dd847e23ff3f7b6ff4e79290f3f`.
-- Package version: `1.0.2-preview.1`.
-- Intended release tag: `platforms-v1.0.2-preview.1` (NOT a `v*` Mac tag).
-- Public installer release: **pending explicit owner approval**. The publish
-  attempt was blocked before execution because the bundles derive from private
-  bridge source. Sanitization and tests do not replace disclosure approval.
-- No production bridge restart, main-branch merge or stable Mac release change.
-- Official website changes are prepared separately in the existing Lovable
-  project. Do not deploy download URLs until the assets are actually public.
+- Branch / PR: `codex/connect-linux-windows`, [PR 19](https://github.com/cashtsai/pocket-connect/pull/19), not merged.
+- Published package source: `08fda6f86e55b30033ff4595c6ce01fbb51f6247`.
+- Bundled runtime: `54e089e653766dd847e23ff3f7b6ff4e79290f3f`.
+- Public [1.0.2-preview.2](https://github.com/cashtsai/pocket-connect/releases/tag/platforms-v1.0.2-preview.2), tag `platforms-v1.0.2-preview.2`.
+- Owner approved following the existing Mac distribution process after the prior
+  public-release approval question. Sanitized allowlisted payload only, through
+  the established official public GitHub Releases channel.
+- Public assets downloaded without authentication and checked against SHA256SUMS.
+- Mac stable/latest remains v1.0.1. No production bridge, cloud host or iOS changes.
+- Official website rollout is in the existing Lovable project
+  `fb2af823-f900-488b-bdf6-f8ece7326f42`; download enablement follows public verification.
 
-## Verification evidence
+## Evidence and limitations
 
-[CI run 44474152220](https://github.com/cashtsai/pocket-connect/actions/runs/44474152220)
-is green for Ubuntu 24.04 x86_64 and Windows Server 2022.
+[Package build 44477635551](https://github.com/cashtsai/pocket-connect/actions/runs/44477635551):
 
-- 12 unit tests: allowlist, integrity, unlisted-file/symlink rejection, private
-  writes, systemd formatting, runtime environment, failed first-install retry,
-  failed-upgrade runtime/config restoration, public-network sanitizer regression.
-- Ubuntu: real DEB installation in an isolated normal user; real systemd unit;
-  authenticated readiness; missing/wrong-token rejection; QR authorization gate;
-  bundled Console; reinstall retains the pairing token.
-- Windows: PowerShell 5.1 and 7 parsing plus mocked WSL2 preflight. WSL1, root and
-  missing user systemd are rejected. No physical WSL installation was performed.
-- Earlier ARM64 Ubuntu 24.04 container: real runtime/auth/reinstall smoke test
-  passed. No user systemd, reboot or physical-phone test in that container.
+- Ubuntu job PASSED: 14 unit tests, real Ubuntu24.04 x86_64 DEB installation,
+  user systemd, token-authenticated readiness, invalid-token rejection, QR gate,
+  actual Console HTML, headless link with a local test route, missing-XDG recovery,
+  reinstall retains identity. User bus is an explicit DEB dependency.
+- Windows shell job PASSED: PowerShell5.1/7 parsing and mocked WSL preflight.
+- Windows WSL job CANCELLED: Ubuntu Base24.04.5 imported successfully on hosted
+  WindowsServer2025, but the first Linux command stalled before Pocket setup.
+  No real WSL lifecycle pass is claimed; this run's overall result is cancelled.
+- CI-only follow-up `5a4b107` passed Ubuntu/shell checks in
+  [44478729571](https://github.com/cashtsai/pocket-connect/actions/runs/44478729571),
+  with WSL explicitly SKIPPED. Its rebuilt artifacts are NOT the public release.
+- Earlier ARM64 Ubuntu24.04 container runtime/auth/reinstall smoke passed, without
+  systemd/reboot/phone. This is not physical ARM64 platform qualification.
 
-Artifact checksums from the green CI run (all independently checked locally):
+Real WSL attempts are now manual: dispatch the workflow with `wsl_integration=true`
+on a capable disposable runner. The job has a time limit and does not make overall
+green mean WSL passed. Inspect the actual job result. Release tag pushes should
+not build again (tag paths filters do not prevent tag-triggered workflows).
 
-| File | SHA256 |
-|---|---|
-| `pocket-connect_1.0.2~preview.1_all.deb` | `45184496e1ba21e8ac40e7c3b494f5026f12a5550555a285a5e71896e5ca31dc` |
-| `Pocket-Connect-1.0.2-preview.1-windows-wsl2.zip` | `b68ee782f126e4c5d12cb836670df42a35e8e4e722f8968d8b0e2bdf96088579` |
-| `Pocket-Connect-1.0.2-preview.1-linux.tar.gz` | `7bfcdda4f570fe629cbee24d9ff84cefc49ae47fb728e3eaaa0f39dfc2a71c5e` |
+## Public downloads
+
+Use the release's **`SHA256SUMS`**, which matches actual public asset names.
+GitHub normalized `~` to `.` in the uploaded DEB filename; the internal Debian
+version and bytes are unchanged. The versioned `...-SHA256SUMS` is retained only
+as the original CI-filename manifest. Never overwrite published package bytes.
+
+| Public file | Bytes | SHA256 |
+|---|---:|---|
+| `pocket-connect_1.0.2.preview.2_all.deb` | 1596562 | `f0d34a56479228cd568a0d2137bd091abb2bf2a3f62990b129be5f781f5f3b11` |
+| `Pocket-Connect-1.0.2-preview.2-windows-wsl2.zip` | 1886552 | `d5b6ace06d24a4041fb2174fc6863789642d50091ea8116c3781ccc655a3ffbb` |
+| `Pocket-Connect-1.0.2-preview.2-linux.tar.gz` | 1878506 | `53abac2401a397988346b0838b723649b9e1b828d9da3722d46b2d87fcd69bac` |
+
+The Linux tar's 66-file manifest and Windows nested manifest were independently
+verified locally. ZIP embeds the exact same Linux archive. The builder applies
+the existing Mac sanitizer plus independent privacy and credential-shape checks;
+no live DB, logs, dotenv, private plist, credentials or raw private checkout ships.
+The public standard `100.64.0.0/10` CIDR exemption is regression tested; actual
+private host addresses remain blocked.
 
 ## Implementation map
 
-- `packaging/build_platforms.py`: tracked-file allowlist, private sanitizer,
-  independent privacy verification, syntax checks, exact SHA manifest, tar/ZIP.
-- `packaging/build_deb_from_archive.py`: payload verification, DEB launcher and
-  desktop entries, approved Pocket icon, actual `dpkg-deb` build. No root service.
-- `packaging/linux/pocket-connect`: per-user venv, staged installs, systemd,
-  private credentials, explicit LAN opt-in, pairing/status/diagnostics/removal.
-- `packaging/windows/Pocket-Connect.ps1`: existing WSL2 preflight, dependency
-  confirmation, Linux setup, current-user startup shortcut and keepalive.
-- `.github/workflows/build-platform-previews.yml`: pinned private runtime checkout
-  with existing release credentials; sanitizer; build; isolated service test;
-  Windows shell checks; artifact upload only. No public release automation.
-- `packaging/README.md`: end-user setup, networking and limitations.
+- `packaging/build_platforms.py`: allowlisted runtime, sanitizer, integrity manifest.
+- `packaging/build_deb_from_archive.py`: DEB, desktop entries, user-bus dependency.
+- `packaging/linux/pocket-connect`: per-user runtime, staged install/recovery,
+  systemd, private credentials, status/doctor, local Console, headless pairing.
+- `packaging/windows/Pocket-Connect.ps1`: initialized WSL2 preflight, explicit
+  dependency consent, custom first-install port, login shortcut and keepalive.
+- `packaging/tests/test_windows_wsl.ps1`: disposable CI-only distro lifecycle
+  attempt using checksum-pinned official Ubuntu Base, not a production installer.
+- `packaging/README.md`: installation, reachability and troubleshooting.
 
-The privacy sanitizer originally rewrote the standard `100.64.0.0/10` CIDR and
-broke bridge import. Only that exact public network constant is exempted now;
-standalone/private host addresses remain blocked. Both sanitizer and verifier
-are covered by regression tests. This source fix also applies to future Mac
-builds, but the existing DMG has not been rebuilt as part of this task.
+## Mac / Cloud comparison
 
-## Release after approval
+Console is enabled; remote browser access retains Relay-only policy and closed
+file roots. Native Pocket provider sign-in routes require existing device auth.
+Headless `pair --link` is private, single-use and 15 minutes, with an existing route.
+No provider binaries/accounts/subscriptions, managed Codex daemon, paid Cloud
+enrollment or Mac-style automatic tunnel is supplied. Linux Codex stays isolated;
+native Windows/Mac desktop sessions are not automatically shared.
 
-1. Use only the artifact from green run `44474152220`, not older local builds.
-   Download `pocket-connect-platform-previews` and verify its SHA256SUMS.
-2. Publish a prerelease at the intended tag targeting the tested package commit,
-   with `--latest=false`. Attach DEB, Linux tar, Windows ZIP and SHA256SUMS only.
-   Never upload the raw private checkout or the private sanitizer table.
-3. State WSL2, unsigned ZIP, explicit network setup and missing physical end-to-end
-   tests clearly. Do not claim native Windows desktop session synchronization.
-4. Download the public assets again and check size/hash. Confirm stable
-   `releases/latest` still resolves to macOS v1.0.1.
-5. Enable the prepared website's platform-specific URLs/labels/instructions,
-   run bilingual/mobile browser QA, then deploy and inspect the live site.
-6. Update this handoff and the root READMEs to replace pending-publication status.
+Default localhost; phone access needs private Tailscale Serve inside Linux/WSL or
+explicit trusted-LAN opt-in. No firewall/global WSL edits. Windows keepalive starts
+after user login, not before login. Linger is opt-in on Ubuntu. Removal keeps data.
+Dependencies download at install time; runtime rollback does not snapshot the DB.
 
-## Acceptance still required
+## Remaining acceptance
 
-- Physical Windows 11 WSL2 install, ZIP unblock experience, sudo prompt,
-  localhost browser launch, login startup and keepalive.
-- Actual Linux/WSL provider sign-in and a real reply in Pocket. No provider
-  credentials are installed or migrated by these packages.
-- Phone on the same tailnet with Serve, QR claim, streaming, approval, reconnect.
-- Ubuntu 22.04 / Debian 12 and physical ARM64 qualification before broad support
-  claims. Current full service test is Ubuntu 24.04 x86_64.
-- Real reboot/sleep/logout recovery and custom-port network routing.
+- Physical Windows11 WSL2 install, unsigned ZIP unblock, sudo, local browser launch,
+  login/reboot/sleep behavior; actual phone pairing and streaming/approval/reconnect.
+- Provider install/sign-in and one real assistant reply on BOTH new platforms.
+- Ubuntu22.04, Debian12 and physical ARM64 qualification before broad support claims.
 - Native Windows GUI/MSI/EXE and native Windows-app session discovery are separate
-  future work, not features hidden behind this ZIP.
-
-Runtime rollback does not snapshot the database. Dependencies install from PyPI
-at setup time, so this is not an offline, fully locked dependency distribution.
-The default is localhost; no new public tunnel, firewall changes, provider login
-or subscription is supplied. Stop/removal retains user history and tokens.
+  future work, not features already implemented by this ZIP.

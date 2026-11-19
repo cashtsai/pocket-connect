@@ -2,6 +2,8 @@ name: Build platform previews
 
 on:
   push:
+    tags-ignore:
+      - '**'
     paths:
       - 'packaging/**'
       - '.github/workflows/build-platform-previews.yml'
