@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](README.zh-Hant.md)
 
-The desktop half of [Pocket](https://pocket.shan.house). Install it on the Mac where
+The desktop half of [Pocket](https://pocketone.app). Install it on the Mac where
 your agents already run — Claude Code, Codex, Hermes personas — and your phone pairs
 by scanning one QR code. No addresses to type, no tokens to paste.
 
@@ -15,8 +15,24 @@ anywhere, and hands the phone a pairing QR.
 |---|---|
 | **`mac-app/`** | The menu-bar app (SwiftPM, no Dock icon). Environment check and one-click bridge install, Apple sign-in, pairing QR, device list, connection settings. Packages into a signed `.dmg`. This is the product. |
 | **`relay/`** | Reference material for running your own fixed address instead of the built-in temporary tunnel. Optional. |
+| **`packaging/`** | Ubuntu DEB / portable Linux and Windows WSL2 preview installers. See the platform guide and release status below; not macOS feature parity. |
 
-## Install
+## Ubuntu / Windows preview
+
+[Download 1.0.2-preview.2](https://github.com/cashtsai/pocket-connect/releases/tag/platforms-v1.0.2-preview.2)
+for Ubuntu or Windows WSL2. Public downloads and `SHA256SUMS` have been verified.
+Ubuntu 24.04 x86_64 installation is tested. Windows is experimental: shell checks
+pass, but the hosted WSL startup stalled before installation; real Windows and
+phone/provider acceptance remain outstanding. macOS v1.0.1 remains stable/latest.
+
+- [Setup and troubleshooting](packaging/README.md)
+- [Build handoff, verified scope and release gate](docs/PLATFORM_PREVIEW_HANDOFF_2026-11-19.md)
+
+Windows uses WSL2, not a native Windows EXE. Agent accounts and sessions must live
+in WSL; native Windows desktop sessions are not automatically shared. These
+previews bind localhost by default and require explicit network configuration.
+
+## Install on macOS
 
 1. Download the latest `Pocket-<version>.dmg` from
    [Releases](https://github.com/cashtsai/pocket-connect/releases)
@@ -41,7 +57,7 @@ blocks Apple's notary service.
 Full walkthrough, why free mode asks for iCloud, pairing, and troubleshooting:
 **[`docs/INSTALL_FAQ.md`](docs/INSTALL_FAQ.md)**.
 End-user questions about the phone app live in the
-[FAQ on the website](https://pocket.shan.house/#faq).
+[FAQ on the website](https://pocketone.app/#faq).
 
 ## Connecting
 
@@ -69,7 +85,7 @@ swift run                            # menu-bar icon appears
 NOTARIZE=1 BUNDLE_BRIDGE=1 ./packaging/build_dmg.sh   # the real thing
 ```
 
-Releasing is **local, not CI**:
+Releasing the macOS app is **local, not CI**:
 
 ```bash
 ./packaging/cut_release.sh minor     # bump version, tag, push — then it tells you what's left
@@ -77,10 +93,13 @@ gh release create "vX.Y.Z" build/dist/Pocket-X.Y.Z.dmg build/dist/Pocket-X.Y.Z.d
 ./packaging/verify_release.sh vX.Y.Z # verifies the asset people actually download
 ```
 
-CI never touches release assets — it only runs tests and checks that a DMG can be
+The macOS CI never touches release assets — it only runs tests and checks that a DMG can be
 assembled. The reason is in `.github/workflows/release.yml`: CI cannot reach the
 private bridge repo, so the DMG it builds has no bridge inside, and twice it raced a
 real local build onto `releases/latest`.
+
+The separate platform-preview workflow builds sanitized Linux/WSL artifacts and
+tests them; it does not publish releases or change the stable macOS latest tag.
 
 **Always run `verify_release.sh` after uploading.** It downloads the published asset
 and checks signature, notarization, both staple tickets, and the bundled payload — a

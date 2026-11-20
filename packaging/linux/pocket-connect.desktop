@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Pocket Connect Setup
+Comment=Set up the Pocket bridge for your user account
+Exec=/usr/bin/pocket-connect install
+Terminal=true
+Categories=Development;Network;
+Icon=pocket-connect

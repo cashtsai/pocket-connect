@@ -34,7 +34,8 @@ from pathlib import Path
 SHAPE_RULES = [
     (re.compile(r"[\w-]+\.[\w-]+\.ts\.net"), "your-host.your-tailnet.ts.net"),
     (re.compile(r"/Users/(?!you\b)[A-Za-z][\w.-]*"), "/Users/you"),
-    (re.compile(r"(?<![\d.])100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?![\d.])"),
+    # RFC 6598's network constant is public protocol data, not a host address.
+    (re.compile(r"(?<![\d.])(?!100\.64\.0\.0/10\b)100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?![\d.])"),
      "100.64.0.1"),
 ]
 

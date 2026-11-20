@@ -1,0 +1,5 @@
+*
+!packaging/
+!packaging/**
+!dist/
+!dist/*.deb

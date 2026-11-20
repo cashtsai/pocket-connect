@@ -30,7 +30,7 @@ SHAPES = {
     "tailnet 主機名": re.compile(r"[\w-]+\.[\w-]+\.ts\.net"),
     "家目錄路徑": re.compile(r"/Users/(?!you\b)[A-Za-z][\w.-]*"),
     "tailnet IP": re.compile(
-        r"(?<![\d.])100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?![\d.])"),
+        r"(?<![\d.])(?!100\.64\.0\.0/10\b)100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?![\d.])"),
 }
 PLACEHOLDER = re.compile(r"your|example|sample|placeholder|<|__|\byou\b|100\.64\.0\.1", re.I)
 
