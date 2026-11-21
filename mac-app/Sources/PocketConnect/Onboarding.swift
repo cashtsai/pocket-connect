@@ -111,7 +111,7 @@ final class PairingCoordinator {
         // ⚠️ **絕不發出指向共用後備網域的 QR**(2026-10-18 一星風險排查)。
         //
         // `effectiveConnectURL` 是 `customConnectURL ?? autoTunnelURL ?? cfg.connectURL`,
-        // 而最後那個是寫死的 `pocket.tsai.cash` —— 維護者自己的網域。所以只要
+        // 而最後那個是寫死的 `connect.pocketone.app`(2026-11-21 自 pocket.tsai.cash 正名 —— 產品不該掛在維護者個人網域)。所以只要
         // cloudflared 沒裝、還沒跟上、或剛掛掉,QR 就會把**使用者的手機指向
         // 別人的機器**,而且照樣倒數「剩 5:00」。
         //
