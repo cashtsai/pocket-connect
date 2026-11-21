@@ -18,16 +18,16 @@ import PocketConnectKit
 struct Config {
     // Public connect URL the phone points at (the Cloudflare tunnel hostname).
     // Also the base for all bridge app-API calls (auth/apple, pair/new).
-    var connectURL = "https://pocket.tsai.cash"
+    var connectURL = "https://connect.pocketone.app"
     /// 上面那個預設值的 host。
     ///
     /// 它是**所有安裝共用的後備網域**(維護者的主機),只該用在「還沒有自己的
     /// 網址」的過渡期 —— 絕不可以出現在配對 QR 裡。
     /// 見 `PairingCodeController.refresh()` 的守門。
-    static let sharedFallbackHost = "pocket.tsai.cash"
+    static let sharedFallbackHost = "connect.pocketone.app"
     // Fixed Apple web-auth broker. Unlike connectURL/tunnel discovery, Apple's
     // registered return URL cannot change per user or per launch.
-    var webAuthURL = "https://pocket.tsai.cash"
+    var webAuthURL = "https://connect.pocketone.app"
     // Where users download the iOS app (App Store).
     var downloadURL = "https://apps.apple.com/app/id6787644476"
     // UserDefaults flag marking first-run onboarding as complete.

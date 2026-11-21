@@ -14,7 +14,7 @@ final class SharedFallbackHostTests: XCTestCase {
 
     /// 與 `Config.sharedFallbackHost` 同值。刻意**重寫一次**而不是 import ——
     /// 哪天有人改了那個常數，這條會紅，逼他回來想一次「QR 會不會又指向它」。
-    private let fallback = "pocket.tsai.cash"
+    private let fallback = "connect.pocketone.app"
 
     func testPayloadCarriesTheHostItWasGiven() {
         let p = pairingPayload(scheme: "https", host: "abc.trycloudflare.com", code: "123456")
