@@ -87,6 +87,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: cashtsai/hermes-studio-bridge
+          # Pin the notification-isolation fix; releases must not race main.
+          ref: a208fbaa0f9e2d72dafd6b90ff96bc3c7847458e
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge
           fetch-depth: 1
