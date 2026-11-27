@@ -33,5 +33,5 @@ own Hermes/OpenClaw setup provides; the bridge has no built-in accounts.
 
 ## More
 
-- Website & FAQ: https://pocket.shan.house
+- Website & FAQ: https://pocketone.app
 - Install FAQ: see `docs/INSTALL_FAQ.md` in the pocket-connect repository
